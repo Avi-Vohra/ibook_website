@@ -11,21 +11,18 @@ persists the Checkout Session so the invoice page can re-check it on rerun).
 
 from __future__ import annotations
 
-import os
 import random
 import time
 from datetime import date
 
 import stripe
 import streamlit as st
-from dotenv import load_dotenv
 
 import store
 from bookit import content, covers, planner, theme
 from bookit.theme import badge, chips, html, label, note
 
-load_dotenv()
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+stripe.api_key = st.secrets.get("STRIPE_SECRET_KEY", "")
 STRIPE_CURRENCY = "usd"
 SUCCESS_URL = "https://dashboard.stripe.com/workbench/blueprints/one-time-payment/checkout-chapter?confirmation-redirect=create-checkout-session"
 CANCEL_URL = SUCCESS_URL
@@ -735,7 +732,7 @@ def demo_invoice() -> None:
         html('<div class="pending"><p style="margin:0 0 6px"><b>Stripe is not configured.</b> '
              'This is the only setup step left.</p>'
              '<p style="margin:0;font-size:13.5px">Add <code>STRIPE_SECRET_KEY</code> to '
-             '<code>stripe_test/.env</code> (from '
+             '<code>.streamlit/secrets.toml</code> (from '
              '<a href="https://dashboard.stripe.com/apikeys" target="_blank">the Stripe '
              'dashboard</a>) and restart. Then this becomes a working checkout button.</p></div>')
     else:

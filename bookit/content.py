@@ -7,8 +7,8 @@ from __future__ import annotations
 
 # ══════════════════════════════════════════════════════════════════════
 # PAYMENT — display currency symbol only. The actual Checkout Session is
-#   created dynamically in app.py from STRIPE_SECRET_KEY (see stripe_test/.env);
-#   there's nothing to paste here.
+#   created dynamically in app.py from STRIPE_SECRET_KEY (see
+#   .streamlit/secrets.toml); there's nothing to paste here.
 # ══════════════════════════════════════════════════════════════════════
 PAY = {"currency": "$"}
 

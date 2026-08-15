@@ -17,11 +17,21 @@ Opens on <http://localhost:8501>.
 ### Stripe (invoice step)
 
 The invoice step creates a real Stripe Checkout Session sized to the live order
-total. Keys live in `.env` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` — get
-them from [the Stripe dashboard](https://dashboard.stripe.com/apikeys); not
-committed). Pay with test card `4242 4242 4242 4242`, any future expiry, any
-CVC — the invoice page confirms payment by polling the Stripe API directly, no
-webhook receiver required.
+total. Keys are read via `st.secrets`, Streamlit's native secrets mechanism —
+the same file format Streamlit Community Cloud expects at deploy time:
+
+```bash
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+# fill in STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY from
+# https://dashboard.stripe.com/apikeys — this file is gitignored
+```
+
+On Streamlit Community Cloud, skip the file and paste the same two lines into
+**App settings → Secrets** instead.
+
+Pay with test card `4242 4242 4242 4242`, any future expiry, any CVC — the
+invoice page confirms payment by polling the Stripe API directly, no webhook
+receiver required.
 
 A minimal, standalone Checkout demo (`streamlit_app.py`, a fixed $20 product) is
 included too, for sanity-checking the Stripe wiring in isolation.
@@ -40,6 +50,7 @@ included too, for sanity-checking the Stripe wiring in isolation.
 | `store.py` | Shared SQLite persistence for Stripe IDs (imported, not run directly) |
 | `streamlit_app.py` | Minimal standalone Checkout demo (fixed $20 product) |
 | `stripe_store.db` | SQLite database, created automatically on first run |
+| `.streamlit/secrets.toml` | Stripe keys, gitignored — copy from `secrets.toml.example` |
 | `tests/test_app.py` | Smoke tests: every page renders, the wizard runs end to end |
 | `tests/test_action_planner.py` | Payload building, plan validation, JSON recovery (offline) |
 | `scripts/plan_demo.py` | Generate one real plan through Pioneer and print it |

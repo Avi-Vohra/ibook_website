@@ -4,16 +4,12 @@ Payment status is confirmed by polling the Stripe API directly (see
 "Sync from Stripe" below) rather than via a webhook receiver.
 """
 
-import os
-
 import stripe
 import streamlit as st
-from dotenv import load_dotenv
 
 import store
 
-load_dotenv()
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+stripe.api_key = st.secrets.get("STRIPE_SECRET_KEY", "")
 
 PRODUCT_NAME = "Example Product"
 PRODUCT_CURRENCY = "usd"
@@ -29,8 +25,9 @@ st.set_page_config(page_title="Stripe Checkout Demo", page_icon="💳")
 st.title("💳 One-time payment with Stripe Checkout")
 
 if not stripe.api_key:
-    st.error("STRIPE_SECRET_KEY is not set. Copy .env.example to .env and add your keys "
-             "from https://dashboard.stripe.com/apikeys, then restart.")
+    st.error("STRIPE_SECRET_KEY is not set. Copy .streamlit/secrets.toml.example to "
+             ".streamlit/secrets.toml and add your keys from "
+             "https://dashboard.stripe.com/apikeys, then restart.")
     st.stop()
 
 
