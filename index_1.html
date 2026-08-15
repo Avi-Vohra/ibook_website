@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookit — the publishing house with zero employees</title>
+<meta name="description" content="Upload a manuscript. AI agents build your publishing plan, do the work, and hire real humans on Terac for the parts that need taste. $75 to publish, $100 per language, $10 per cover.">
+<style>
+  /* ═══════════════════════════════════════════════════════════════
+     BOOKIT — letterpress galley proof.
+     House rules: no rounded corners, no blur (depth is a hard offset
+     shadow); three type roles only (Fraunces display, Newsreader
+     reading, Space Mono metadata); one spot colour (vermilion) plus
+     ink blue for anything a human did. Every pair clears WCAG AA.
+     ═══════════════════════════════════════════════════════════════ */
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Newsreader:opsz,wght@6..72,200..700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root{
+    --paper:#f1eee4; --plate:#fbf9f2; --ink:#171610; --ink2:#3b382b; --ink3:#5c5847;
+    --rule:#cfc9b6; --spot:#9d2915; --blue:#173d56; --stamp:#e8d27a;
+    --hard:4px 4px 0 rgba(23,22,16,.13); --hard-sm:3px 3px 0 rgba(23,22,16,.11);
+    --display:'Fraunces','Iowan Old Style',Georgia,serif;
+    --read:'Newsreader',Georgia,'Times New Roman',serif;
+    --mono:'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;color-scheme:light}
+  body{margin:0;background:var(--paper);color:var(--ink);font:16.5px/1.62 var(--read);
+    -webkit-font-smoothing:antialiased;
+    background-image:repeating-linear-gradient(0deg,rgba(23,22,16,.021) 0 1px,transparent 1px 3px),
+      radial-gradient(circle at 16% 4%,rgba(157,41,21,.035),transparent 42%)}
+  ::selection{background:var(--stamp);color:var(--ink)}
+  :focus-visible{outline:2.5px solid var(--spot);outline-offset:2px}
+  .wrap{max-width:1020px;margin:0 auto;padding:0 22px}
+  .narrow{max-width:66ch}
+  .mono{font-family:var(--mono)}
+  .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .hide{display:none !important}
+
+  .skip{position:absolute;left:-9999px;top:0;z-index:200;background:var(--stamp);color:var(--ink);
+    font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.16em;
+    text-transform:uppercase;padding:14px 20px;border:2px solid var(--ink);text-decoration:none}
+  .skip:focus{left:0}
+
+  /* ── running head ─────────────────────────────────────────────── */
+  nav{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--ink)}
+  .nv{max-width:1020px;margin:0 auto;padding:9px 22px;display:flex;align-items:center;gap:8px}
+  .logo{font-family:var(--display);font-weight:600;font-size:22px;letter-spacing:-.03em;
+    text-decoration:none;color:var(--ink);font-variation-settings:'SOFT' 40,'WONK' 1}
+  .logo i{font-style:normal;color:var(--spot)}
+  .nv .sp{flex:1}
+  .nv a.lk{color:var(--ink2);text-decoration:none;font-family:var(--mono);font-size:9.5px;
+    letter-spacing:.15em;text-transform:uppercase;padding:7px 9px}
+  .nv a.lk:hover{color:var(--spot)}
+  @media(max-width:820px){.nv a.lk{display:none}}
+
+  /* ── buttons: inked slabs ─────────────────────────────────────── */
+  .btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;
+    font-weight:700;letter-spacing:.16em;text-transform:uppercase;background:var(--ink);
+    color:var(--paper);border:1.5px solid var(--ink);padding:12px 20px;border-radius:0;
+    cursor:pointer;text-decoration:none;box-shadow:var(--hard-sm);transition:none}
+  .btn:hover{background:var(--spot);border-color:var(--spot);color:var(--paper)}
+  .btn:active{box-shadow:none;transform:translate(3px,3px)}
+  .btn.sm{padding:9px 14px;font-size:9.5px}
+  .btn.ghost{background:var(--plate);color:var(--ink)}
+  .btn.ghost:hover{background:var(--stamp);color:var(--ink);border-color:var(--ink)}
+  .btn:disabled{background:var(--paper);color:var(--ink3);border-color:var(--rule);
+    box-shadow:none;cursor:not-allowed;transform:none}
+
+  /* ── masthead ─────────────────────────────────────────────────── */
+  .hero{padding:0 0 34px}
+  .masthead{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink3);padding:11px 0;border-top:3px solid var(--ink);
+    border-bottom:1px solid var(--ink)}
+  h1{font-family:var(--display);font-size:clamp(42px,8.6vw,100px);line-height:.92;
+    letter-spacing:-.045em;margin:34px 0 20px;font-weight:600;text-align:center;
+    text-wrap:balance;font-variation-settings:'SOFT' 30,'WONK' 1}
+  h1 .thin{font-weight:300;font-style:italic}
+  .sub{font-size:19.5px;color:var(--ink2);max-width:54ch;margin:0 auto 16px;line-height:1.5;
+    text-align:center}
+  .priceline{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink3);text-align:center;margin:0 auto 24px}
+  .priceline b{color:var(--spot)}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9.5px;
+    font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--ink);
+    background:var(--stamp);border:0;padding:6px 13px;margin:0 0 4px}
+  .eyebrow .dot{width:5px;height:5px;background:var(--ink);border-radius:0}
+  .heroBtns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+
+  /* ── sections: double rule + numbered slug ────────────────────── */
+  h2{font-family:var(--display);font-size:clamp(30px,4.4vw,50px);line-height:1.02;
+    letter-spacing:-.035em;margin:0 0 12px;font-weight:600;
+    font-variation-settings:'SOFT' 30,'WONK' 1}
+  h3{font-family:var(--display);font-size:20px;margin:20px 0 6px;letter-spacing:-.02em;
+    font-weight:600}
+  .sec{padding:54px 0;position:relative;border-top:3px solid var(--ink);scroll-margin-top:60px}
+  .sec::before{content:"";position:absolute;top:4px;left:0;right:0;height:1px;background:var(--ink)}
+  .sec.bare{border-top:0}
+  .sec.bare::before{display:none}
+  #demo,#terac,#how,#judges,#pricing,#main{scroll-margin-top:60px}
+  .lbl{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--spot);margin:0 0 14px;display:block}
+  .lbl .no{color:var(--ink3)}
+  p{color:var(--ink2);margin:12px 0}
+  .lead{font-size:19px;color:var(--ink);line-height:1.55}
+  a{color:var(--spot);text-decoration-thickness:1px;text-underline-offset:3px}
+  strong,b{color:var(--ink);font-weight:700}
+  code{font-family:var(--mono);font-size:13px;background:var(--paper);border:1px solid var(--rule);
+    padding:1px 5px}
+
+  /* ── plates + stamps ──────────────────────────────────────────── */
+  .card{background:var(--plate);border:1.5px solid var(--ink);border-radius:0;padding:22px;
+    box-shadow:var(--hard);position:relative}
+  .card.crop::before,.card.crop::after{content:"";position:absolute;width:9px;height:9px}
+  .card.crop::before{top:6px;left:6px;border-top:1px solid var(--spot);
+    border-left:1px solid var(--spot)}
+  .card.crop::after{bottom:6px;right:6px;border-bottom:1px solid var(--spot);
+    border-right:1px solid var(--spot)}
+  .stamp{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--spot);border:2px solid var(--spot);
+    padding:5px 11px;transform:rotate(-2.2deg);background:rgba(157,41,21,.05);margin-bottom:14px}
+  .stamp.paid{color:var(--blue);border-color:var(--blue);background:rgba(23,61,86,.05)}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+  .note{background:var(--plate);border:1px solid var(--ink);border-left:5px solid var(--spot);
+    border-radius:0;padding:16px 19px;margin:18px 0}
+  .note b{color:var(--ink)}
+  .out{background:var(--plate);border:1px solid var(--rule);border-left:3px solid var(--ink);
+    padding:17px 19px;margin:14px 0}
+  .out p{margin:0;font-size:15.5px}
+  .out .serif{font-family:var(--display);color:var(--ink);font-size:17.5px;line-height:1.58}
+  .pending{background:rgba(157,41,21,.06);border:1.5px dashed var(--spot);padding:15px 17px;
+    font-size:14.5px;color:var(--ink2)}
+  .pending b{color:var(--spot)}
+  .readout{border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:14px 0;
+    margin:0 0 20px;background:transparent}
+
+  /* ── badges + chips ───────────────────────────────────────────── */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;
+    font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:3px 8px;
+    border:1px solid currentColor;border-radius:0;white-space:nowrap}
+  .badge.ag{color:var(--spot);background:rgba(157,41,21,.07)}
+  .badge.hu{color:var(--blue);background:rgba(23,61,86,.07)}
+  .dot{width:4px;height:4px;border-radius:0;background:currentColor;flex:0 0 auto}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    padding:4px 9px;background:var(--paper);border:1px solid var(--rule);color:var(--ink2)}
+  .chip b{color:var(--ink)}
+
+  /* ── tariff cards ─────────────────────────────────────────────── */
+  .prices{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+    margin-top:26px}
+  .pc{background:var(--plate);border:1.5px solid var(--ink);padding:20px;box-shadow:var(--hard)}
+  .pc h3{margin:0;font-size:18px}
+  .pc .amt{font-family:var(--display);font-size:52px;font-weight:600;letter-spacing:-.045em;
+    color:var(--ink);line-height:.9;margin:10px 0 2px}
+  .pc .per{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink3);margin:0 0 12px;padding-bottom:12px;border-bottom:1px solid var(--rule)}
+  .pc ul{margin:0;padding-left:17px;font-size:15px;color:var(--ink2)}
+  .pc li{margin:5px 0}
+
+  /* ── numbered steps ───────────────────────────────────────────── */
+  .step{display:flex;gap:20px;padding:20px 0;border-bottom:1px solid var(--rule)}
+  .step:last-child{border:0}
+  .num{flex:0 0 58px;font-family:var(--display);font-size:52px;line-height:.8;font-weight:600;
+    color:var(--spot);opacity:.34;letter-spacing:-.04em;user-select:none;background:none;
+    border:0;display:block;height:auto;text-align:left}
+  @supports (-webkit-text-stroke:1px red){
+    .num{color:transparent;opacity:1;-webkit-text-stroke:1.2px var(--spot)}
+  }
+  .step h3{margin:2px 0 5px;font-size:21px}
+  .step p{margin:0;font-size:16px;max-width:64ch}
+
+  /* ── the press (app frame) ────────────────────────────────────── */
+  .app{background:var(--plate);border:1.5px solid var(--ink);border-radius:0;overflow:hidden;
+    box-shadow:var(--hard);margin-top:28px}
+  .appbar{display:flex;align-items:center;gap:9px;padding:10px 18px;background:var(--ink);
+    border-bottom:0;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--stamp)}
+  .tl{display:flex;gap:5px;margin-right:6px}
+  .tl i{width:8px;height:8px;border-radius:0;background:rgba(232,210,122,.5);display:block}
+  .appbody{padding:30px}
+  @media(max-width:600px){.appbody{padding:20px 16px}}
+
+  /* signature marks */
+  .stepbar{display:flex;gap:0;margin:0 0 30px;border:1px solid var(--ink);counter-reset:sig;
+    list-style:none;padding:0}
+  .sb{flex:1;counter-increment:sig;padding:9px 8px 8px;background:var(--plate);
+    border-right:1px solid var(--ink);min-width:0}
+  .sb:last-child{border-right:0}
+  .sb i{display:none}
+  .sb::before{content:counter(sig,decimal-leading-zero);display:block;font-family:var(--mono);
+    font-size:9.5px;font-weight:700;letter-spacing:.14em;color:var(--ink3);margin-bottom:2px}
+  .sb span{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink3);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .sb.on{background:var(--ink)}
+  .sb.on::before{color:var(--stamp)}
+  .sb.on span{color:var(--paper)}
+
+  .pane{display:none}
+  .pane.on{display:block;animation:fade .26s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.pane.on{animation:none}}
+
+  /* ── the wallet (uploader) ────────────────────────────────────── */
+  .drop{border:1.5px dashed var(--ink);border-radius:0;padding:34px 22px;text-align:center;
+    background:var(--paper);cursor:pointer;width:100%;font:inherit;color:var(--ink);display:block}
+  .drop:hover,.drop.hv{background:var(--stamp)}
+  .drop .ic{font-size:26px;margin-bottom:8px}
+  .drop b{display:block;font-family:var(--display);font-size:19px;margin-bottom:4px;
+    color:var(--ink)}
+  .drop small{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink3)}
+  .fileOk{display:none;align-items:center;gap:13px;padding:14px 16px;border-radius:0;
+    background:var(--plate);border:1.5px solid var(--blue);margin-top:14px}
+  .fileOk.on{display:flex}
+  .fileOk b{color:var(--ink);font-size:16px;font-family:var(--display)}
+  .fileOk small{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink3)}
+
+  /* ── the order form ──────────────────────────────────────────── */
+  .fld{margin:28px 0 0}
+  .fld > .flabel{display:block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--ink);margin-bottom:5px}
+  .fld > .hint{font-size:15px;color:var(--ink2);margin:0 0 12px;max-width:64ch}
+  .svcs{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .svc{border:1.5px solid var(--ink);border-radius:0;padding:16px;cursor:pointer;
+    background:var(--plate);position:relative;text-align:left;color:var(--ink);font:inherit;
+    box-shadow:var(--hard-sm)}
+  .svc:hover{background:var(--paper)}
+  .svc.on{background:var(--ink);color:var(--paper);box-shadow:none;transform:translate(3px,3px)}
+  .svc.on b,.svc.on strong,.appbar b,.appbar strong,.sb.on span b,
+  .cv .wb b,.eyebrow b{color:inherit}
+  .svc .ic{font-size:20px;margin-bottom:7px}
+  .svc b{display:block;font-family:var(--display);font-size:18px;margin-bottom:2px;
+    letter-spacing:-.02em;color:inherit}
+  .svc .cost{display:block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--spot);margin-bottom:7px}
+  .svc.on .cost{color:var(--stamp)}
+  .svc small{display:block;font-size:14.5px;line-height:1.45;color:var(--ink2);padding-right:26px}
+  .svc.on small{color:rgba(241,238,228,.86)}
+  .svc .tick{position:absolute;top:13px;right:13px;width:20px;height:20px;border-radius:0;
+    border:1.5px solid var(--ink);display:grid;place-items:center;font-size:11px;
+    font-family:var(--mono);font-weight:700}
+  .svc .tick span{visibility:hidden}
+  .svc.on .tick{background:var(--stamp);border-color:var(--stamp);color:var(--ink)}
+  .svc.on .tick span{visibility:visible}
+
+  textarea,input[type=text],input[type=number]{width:100%;background:var(--plate);color:var(--ink);
+    border:1.5px solid var(--ink);border-radius:0;padding:13px 14px;font:inherit;font-size:16px;
+    resize:vertical;font-family:var(--read)}
+  input[type=number]{font-family:var(--mono);font-weight:700;font-size:17px}
+  textarea:focus,input:focus{outline:0;box-shadow:var(--hard-sm)}
+  textarea::placeholder{color:var(--ink3)}
+  .exBtn{background:none;border:0;color:var(--spot);font-family:var(--mono);font-size:10px;
+    font-weight:700;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;padding:8px 0;
+    text-decoration:underline;text-underline-offset:4px}
+
+  /* steppers as a compositor's gauge */
+  .qrow{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1.5px solid var(--ink);
+    border-radius:0;background:var(--plate);margin-top:10px;flex-wrap:wrap}
+  .qrow .qt{flex:1;min-width:170px}
+  .qrow .qt b{display:block;font-family:var(--display);font-size:17px;letter-spacing:-.02em}
+  .qrow .qt small{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink3)}
+  .stepper{display:flex;align-items:center;gap:0;border:1.5px solid var(--ink);
+    background:var(--paper);border-radius:0}
+  .stepper button{width:34px;height:34px;border:0;background:transparent;border-radius:0;
+    font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink);cursor:pointer;
+    line-height:1}
+  .stepper button:hover:not(:disabled){background:var(--stamp)}
+  .stepper button:disabled{opacity:.3;cursor:not-allowed}
+  .stepper .val{min-width:38px;text-align:center;font-family:var(--mono);font-weight:700;
+    font-size:16px;border-left:1.5px solid var(--ink);border-right:1.5px solid var(--ink);
+    padding:6px 0}
+  .qrow .qp{font-family:var(--mono);font-weight:700;font-size:16px;min-width:58px;
+    text-align:right;color:var(--ink)}
+
+  /* ── the docket (live quote) ──────────────────────────────────── */
+  .quote{background:var(--plate);border:1.5px solid var(--ink);border-radius:0;padding:20px 22px;
+    margin-top:28px;box-shadow:var(--hard)}
+  .qline{display:flex;align-items:baseline;gap:10px;font-size:15.5px;padding:9px 0;
+    color:var(--ink2);border-bottom:1px dotted var(--rule)}
+  .qline > span:first-child{flex:0 1 auto}
+  .qline small{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink3) !important;margin-top:3px}
+  .qline b{margin-left:auto;font-family:var(--mono);font-weight:700;font-size:15px;color:var(--ink);
+    white-space:nowrap;flex:0 0 auto}
+  .qsum{display:flex;justify-content:space-between;align-items:center;gap:12px;
+    border-top:2px solid var(--ink);margin-top:12px;padding-top:14px}
+  .qsum .k{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--ink3)}
+  .qsum .v{font-family:var(--display);font-size:44px;font-weight:600;letter-spacing:-.045em;
+    color:var(--ink);line-height:.9}
+  .bstat{margin-top:16px;padding:13px 16px;border-radius:0;font-size:15px;display:flex;gap:12px;
+    align-items:center;flex-wrap:wrap;border:1.5px solid var(--ink);background:var(--plate)}
+  .bstat .grow{flex:1;min-width:190px;color:var(--ink2)}
+  .bstat b{color:var(--ink)}
+  .bstat.ok{border-color:var(--blue)}
+  .bstat.over{border-color:var(--spot);background:rgba(157,41,21,.05)}
+
+  .totbar{position:sticky;bottom:0;background:var(--plate);border-top:1.5px solid var(--ink);
+    margin:26px -30px -30px;padding:16px 30px;display:flex;align-items:center;gap:14px;
+    flex-wrap:wrap}
+  @media(max-width:600px){.totbar{margin:24px -16px -20px;padding:14px 16px}}
+  .totbar .t{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink3);min-width:160px}
+  .totbar .t b{color:var(--ink);font-size:13px}
+
+  /* ── plan items ───────────────────────────────────────────────── */
+  .ai{display:flex;gap:15px;padding:17px;border:1.5px solid var(--rule);border-radius:0;
+    margin-bottom:12px;background:var(--plate);text-align:left;width:100%;font:inherit;
+    color:var(--ink);cursor:pointer}
+  .ai:hover{border-color:var(--ink)}
+  .ai.on{border-color:var(--ink);box-shadow:var(--hard-sm)}
+  .ai .cb{flex:0 0 21px;height:21px;border-radius:0;border:1.5px solid var(--ink);display:grid;
+    place-items:center;margin-top:3px;font-family:var(--mono);font-size:12px;font-weight:700}
+  .ai .cb span{visibility:hidden}
+  .ai.on .cb{background:var(--ink);border-color:var(--ink);color:var(--stamp)}
+  .ai.on .cb span{visibility:visible}
+  .ai .bd{flex:1;min-width:0}
+  .ai h4{margin:0 0 6px;font-family:var(--display);font-size:19px;font-weight:600;
+    letter-spacing:-.02em;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .ai p{margin:0 0 9px;font-size:15.5px;line-height:1.5;color:var(--ink2);max-width:66ch}
+  .meta{display:flex;gap:16px;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink3);flex-wrap:wrap}
+  .meta b{color:var(--ink);font-weight:700}
+
+  /* ── press run ────────────────────────────────────────────────── */
+  .runlist{margin:0;padding:0;list-style:none}
+  .runlist li{display:flex;gap:14px;align-items:flex-start;padding:12px 0;
+    border-bottom:1px solid var(--rule);opacity:.4;transition:.3s}
+  .runlist li:last-child{border:0}
+  .runlist li.on{opacity:1}
+  .runlist .st{flex:0 0 20px;height:20px;border-radius:0;border:1.5px solid var(--rule);
+    margin-top:3px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;
+    font-weight:700}
+  .runlist li.on .st{border-color:var(--spot);background:rgba(157,41,21,.1)}
+  .runlist li.ok .st{border-color:var(--ink);background:var(--ink);color:var(--stamp)}
+  .runlist li.ok .st::before{content:"✓"}
+  .runlist .tx{flex:1}
+  .runlist .tx b{display:block;font-family:var(--display);font-size:17px;color:var(--ink);
+    margin-bottom:2px;font-weight:600}
+  .runlist .tx small{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink3)}
+
+  /* ── covers on a proof sheet ──────────────────────────────────── */
+  .covers{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+  .cv{position:relative;padding-top:4px}
+  .cv svg{width:100%;height:auto;border-radius:0;border:1px solid var(--ink);
+    box-shadow:var(--hard-sm);display:block}
+  .cv .cap{text-align:center;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink3);margin-top:9px}
+  .cv.win svg{box-shadow:0 0 0 3px var(--stamp),var(--hard-sm)}
+  .cv.win .cap{color:var(--ink);font-weight:700}
+  .cv .wb{position:static;display:block;transform:none;text-align:center;background:var(--ink);
+    color:var(--stamp);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;padding:4px 8px;margin:0 auto 8px;width:fit-content;border-radius:0}
+  .cv .lb{position:absolute;top:12px;left:8px;background:var(--ink);color:var(--stamp);
+    font-family:var(--mono);font-size:10px;font-weight:700;width:20px;height:20px;border-radius:0;
+    display:grid;place-items:center}
+
+  /* ── the verdict ──────────────────────────────────────────────── */
+  .ba{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid var(--ink);border-radius:0;
+    background:var(--plate);box-shadow:var(--hard)}
+  @media(max-width:640px){.ba{grid-template-columns:1fr}}
+  .ba > div{padding:25px}
+  .ba .before{border-right:1.5px solid var(--ink);background:
+    repeating-linear-gradient(-45deg,transparent 0 7px,rgba(23,22,16,.028) 7px 14px)}
+  @media(max-width:640px){.ba .before{border-right:0;border-bottom:1.5px solid var(--ink)}}
+  .ba h3{margin:0 0 6px;font-family:var(--mono);font-size:9.5px;font-weight:700;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--ink3)}
+  .ba .after h3{color:var(--blue)}
+  .ba .pick{font-family:var(--display);font-size:40px;font-weight:600;letter-spacing:-.04em;
+    margin:4px 0;line-height:1}
+  .ba .before .pick{color:var(--ink3);text-decoration:line-through;
+    text-decoration-color:var(--spot);text-decoration-thickness:2px}
+  .ba .after .pick{color:var(--blue)}
+  .ba .pct{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink3)}
+  .ba ul{margin:14px 0 0;padding-left:16px;font-size:15px;color:var(--ink2)}
+  .ba li{margin:5px 0}
+  blockquote.q{border:0;border-left:5px solid var(--blue);padding:6px 0 6px 18px;margin:22px 0 0;
+    font-family:var(--display);font-size:23px;line-height:1.34;color:var(--ink);max-width:56ch;
+    font-variation-settings:'SOFT' 40,'WONK' 1}
+  blockquote.q cite{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink3);font-style:normal;margin-top:10px}
+
+  /* ── invoice docket ───────────────────────────────────────────── */
+  .invHead{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;
+    flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:16px}
+  .invMeta{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink3);text-align:right;line-height:1.9;flex:0 0 auto}
+  .invMeta span{display:block}
+  .invMeta b{display:block;color:var(--ink);font-size:13px}
+  table.inv{width:100%;border-collapse:collapse;font-size:15.5px;margin:0}
+  table.inv td{padding:14px 0;border-bottom:1px dotted var(--rule);vertical-align:top;
+    line-height:1.45}
+  table.inv td.who{display:none}
+  table.inv td.amt{text-align:right;white-space:nowrap;font-family:var(--mono);font-weight:700;
+    font-size:15px;color:var(--ink);width:1%;padding-left:18px}
+  table.inv td.amt.free,table.inv td.amt.included{font-weight:400;font-size:10px;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+  table.inv .ttl{display:block;font-family:var(--display);font-size:17px;font-weight:600;
+    color:var(--ink);letter-spacing:-.015em}
+  table.inv .sub{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink3);margin-top:4px;line-height:1.65}
+  .invTot{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;
+    border-top:2px solid var(--ink);padding-top:18px;flex-wrap:wrap}
+  .invBig{font-family:var(--display);font-size:60px;font-weight:600;letter-spacing:-.05em;
+    color:var(--ink);line-height:.86}
+
+  /* ── spec sheet ───────────────────────────────────────────────── */
+  table.data{width:100%;border-collapse:collapse;font-size:15.5px;margin:16px 0;
+    border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+  table.data th,table.data td{text-align:left;padding:14px 12px 14px 0;
+    border-bottom:1px dotted var(--rule);vertical-align:top}
+  table.data th{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink3);font-weight:700;padding:10px 12px 10px 0;
+    border-bottom:1px solid var(--ink)}
+  table.data td{color:var(--ink2);max-width:60ch}
+  table.data td.n{white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink);padding-right:26px}
+  table.data tr:last-child td{border-bottom:0}
+
+  footer{border-top:3px solid var(--ink);padding:22px 0 60px;font-family:var(--mono);
+    font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);
+    text-align:center;line-height:2}
+  footer strong{color:var(--ink)}
+
+</style>
+</head>
+<body>
+
+<a href="#main" class="skip">Skip to main content</a>
+
+<nav aria-label="Main">
+  <div class="nv">
+    <a href="#main" class="logo">Book<i>it</i></a>
+    <div class="sp"></div>
+    <a href="#how" class="lk">How it works</a>
+    <a href="#pricing" class="lk">Pricing</a>
+    <a href="#demo" class="lk">Try it</a>
+    <a href="#terac" class="lk">Human results</a>
+    <a href="#demo" class="btn sm">Try it free</a>
+  </div>
+</nav>
+
+<main id="main">
+
+<div class="wrap hero">
+  <div class="masthead"><span>Bookit &amp; Co. · Printers</span>
+    <span>No. 001 · First Edition</span>
+    <span>San Francisco · MMXXVI</span></div>
+  <h1 class="serif">The publishing house<br><span class="thin">with zero</span> employees.</h1>
+  <p class="sub">Upload your manuscript. AI agents write your publishing plan, do the work, and hire <strong>real humans</strong> for the parts that need taste.</p>
+  <p class="priceline"><b>$75</b> to publish · <b>$100</b> per language · <b>$10</b> per cover design. Set a budget and Bookit keeps the plan inside it.</p>
+  <div class="heroBtns">
+    <a href="#demo" class="btn">Set my book in type →</a>
+    <a href="#pricing" class="btn ghost">The tariff</a>
+  </div>
+  <p style="margin:26px 0 0"><span class="eyebrow"><span class="dot"></span>Proof copy · Zero Human Company Hackathon</span></p>
+</div>
+
+<!-- FOR JUDGES -->
+<div class="wrap sec bare" id="judges">
+  <div class="card crop">
+    <p class="stamp">Read this first · 30 seconds</p>
+    <h2 class="serif" style="font-size:24px">What this is, and what's real</h2>
+    <p class="lead">Bookit is an agentic publishing house. A traditional publisher takes 18&nbsp;months and most of your royalties. Bookit reads your manuscript, produces a publishing plan tailored to <em>your</em> book, prices it against your budget, and executes it — but it does <strong>not pretend to have taste</strong>. When a decision needs a human eye (which cover sells, which blurb hooks, does this translation read naturally), it hires real people through <strong>Terac</strong> and ships what they chose.</p>
+    <div class="grid g2" style="margin-top:18px">
+      <div>
+        <p class="lbl">Real, in this page</p>
+        <ul style="margin:0;padding-left:19px;font-size:14.6px;color:var(--ink2)">
+          <li>The planning agent reads your context and generates a different plan for different books — try two different inputs.</li>
+          <li>Pricing, budget checking and the invoice are fully live and add up.</li>
+          <li>Cover directions are generated from your title and genre.</li>
+          <li>The verdict in <a href="#terac">Human results</a> is real data from real people recruited through Terac.</li>
+        </ul>
+      </div>
+      <div>
+        <p class="lbl">Staged for this demo</p>
+        <ul style="margin:0;padding-left:19px;font-size:14.6px;color:var(--ink2)">
+          <li>The pipeline runs in your browser, so timings are compressed — a real run takes hours.</li>
+          <li>Translation shows one sample chapter, not a whole book.</li>
+          <li>Checkout is a real Stripe payment link; we don't process cards ourselves.</li>
+          <li>We'd rather tell you this than have you find it.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROBLEM -->
+<div class="wrap sec">
+  <div class="narrow">
+    <p class="lbl"><span class="no">§ 01 /</span> The problem</p>
+    <h2 class="serif">Publishing is a taste business with a formatting problem.</h2>
+    <p class="lead">Most of what a publisher does is mechanical: extract, typeset, generate metadata, build keyword lists, produce an EPUB, localise a glossary. Software has been able to do all of it for years.</p>
+    <p>The part that <em>isn't</em> mechanical is judgement. Which cover makes someone stop scrolling. Whether a blurb lands. Whether a translated sentence sounds like a person wrote it. That's why publishers charge what they charge — you're paying for taste, bundled with a lot of formatting.</p>
+    <p><strong>Bookit unbundles it.</strong> Agents do the formatting for near-zero cost. Taste gets bought by the question, from real readers, through an API.</p>
+  </div>
+</div>
+
+<!-- PRICING -->
+<div class="wrap sec" id="pricing">
+  <div class="narrow">
+    <p class="lbl"><span class="no">§ 02 /</span> The tariff</p>
+    <h2 class="serif">Flat prices. No royalty share.</h2>
+    <p class="lead">You keep your rights and 100% of your royalties. Human testing is paid for out of these prices — when Bookit hires readers on Terac, that's already included.</p>
+  </div>
+  <div class="prices">
+    <div class="pc">
+      <h3>Publishing &amp; cover design</h3>
+      <p class="amt">$75</p>
+      <p class="per">one-time, per book</p>
+      <ul>
+        <li>Print-ready interior PDF</li>
+        <li>Store-validated EPUB</li>
+        <li>Store metadata &amp; keywords</li>
+        <li>Front and back matter</li>
+        <li>Cover testing with real readers</li>
+      </ul>
+    </div>
+    <div class="pc">
+      <h3>Translation</h3>
+      <p class="amt">$100</p>
+      <p class="per">per language</p>
+      <ul>
+        <li>Named-entity glossary</li>
+        <li>Glossary-locked translation</li>
+        <li>Native-speaker review</li>
+        <li>Localised title &amp; blurb</li>
+      </ul>
+    </div>
+    <div class="pc">
+      <h3>Cover directions</h3>
+      <p class="amt">$10</p>
+      <p class="per">per cover design</p>
+      <ul>
+        <li>Genuinely different directions, not variations</li>
+        <li>Generated from your genre and title</li>
+        <li>Real readers pick the winner</li>
+        <li>Most authors order four</li>
+      </ul>
+    </div>
+    <div class="pc">
+      <h3>Marketing</h3>
+      <p class="amt">$50</p>
+      <p class="per">one-time, per book</p>
+      <ul>
+        <li>Blurb and title testing</li>
+        <li>Keyword &amp; category research</li>
+        <li>Launch sequence and calendar</li>
+        <li>Price-point survey</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">
+    <p style="margin:0"><b>Set a budget and Bookit respects it.</b> Enter what you can spend in the form below and the total is checked live. Go over and Bookit says so — and offers to trim the order down to fit rather than quietly dropping things.</p>
+  </div>
+</div>
+
+<!-- HOW -->
+<div class="wrap sec" id="how">
+  <div class="narrow">
+    <p class="lbl"><span class="no">§ 03 /</span> How it works</p>
+    <h2 class="serif">Four steps, and one honest admission.</h2>
+  </div>
+  <div class="card" style="margin-top:24px">
+    <div class="step">
+      <p class="num" aria-hidden="true">1</p>
+      <div><h3>You upload, and you talk</h3>
+        <p>Drop in a PDF and tell Bookit about your book in plain language — genre, who it's for, what you want, what you can spend, what language you want it in. The more specific you are, the more specific the plan.</p></div>
+    </div>
+    <div class="step">
+      <p class="num" aria-hidden="true">2</p>
+      <div><h3>An agent writes your publishing plan</h3>
+        <p>Not a checklist. A plan built for <em>your</em> book, as a set of action items — each labelled with who does it: <span class="badge ag"><span class="dot"></span>Agent</span> or <span class="badge hu"><span class="dot"></span>Human via Terac</span>. You pick what you want. Nothing runs without your approval.</p></div>
+    </div>
+    <div class="step">
+      <p class="num" aria-hidden="true">3</p>
+      <div><h3>Agents do the mechanical work</h3>
+        <p>Text extraction, a named-entity glossary so translations stay consistent, print-ready typesetting, a reflowable EPUB, store metadata and keywords, cover directions, launch copy. This is the part that used to cost you months.</p></div>
+    </div>
+    <div class="step">
+      <p class="num" aria-hidden="true">4</p>
+      <div><h3>Then it hires humans for the taste calls</h3>
+        <p>Bookit posts the judgement calls to <strong>Terac</strong>, a network of 180,000+ people. Real readers rank your covers, your blurbs, your titles. Native speakers check your translation. Bookit ships what they chose — <em>not</em> what the model preferred.</p></div>
+    </div>
+  </div>
+  <div class="note">
+    <p style="margin:0"><b>The honest admission:</b> a model can generate a hundred covers, but it cannot tell you which one a human would pick up in a bookstore. Anyone who says otherwise is selling you a guess. Bookit's whole design is built around that limit rather than hiding it — which is why the interesting number on this page is in <a href="#terac">Human results</a>, not in the demo.</p>
+  </div>
+</div>
+
+<!-- DEMO -->
+<div class="wrap sec" id="demo">
+  <div class="narrow">
+    <p class="lbl"><span class="no">§ 04 /</span> The press</p>
+    <h2 class="serif">Publish a book, right now.</h2>
+    <p class="lead">This is the live product. Use your own PDF or load our sample author — then change the context and watch the plan and the price change with it.</p>
+  </div>
+
+  <div class="app">
+    <div class="appbar"><span class="tl" aria-hidden="true"><i></i><i></i><i></i></span> Bookit &amp; Co. · Composing room · Job no. 001</div>
+    <div class="appbody">
+      <ol class="stepbar" aria-label="Progress">
+        <li class="sb on" id="sb0"><i aria-hidden="true"></i><span>Manuscript</span></li>
+        <li class="sb" id="sb1"><i aria-hidden="true"></i><span>Plan</span></li>
+        <li class="sb" id="sb2"><i aria-hidden="true"></i><span>Approve</span></li>
+        <li class="sb" id="sb3"><i aria-hidden="true"></i><span>Results</span></li>
+        <li class="sb" id="sb4"><i aria-hidden="true"></i><span>Invoice</span></li>
+      </ol>
+
+      <!-- PANE 0 -->
+      <div class="pane on" id="p0">
+        <h3 class="serif" style="font-size:24px;margin:10px 0 6px">Let's get your book published.</h3>
+        <p style="margin-top:0">Four things and Bookit can start: the manuscript, what you want done, your budget, and who you are.</p>
+
+        <button type="button" class="drop" id="drop">
+          <span class="ic" aria-hidden="true">📄</span>
+          <b>Drop your manuscript PDF here</b>
+          <small>or click to browse · PDF, DOCX, EPUB · nothing leaves your browser in this demo</small>
+        </button>
+        <input type="file" id="file" accept=".pdf,.docx,.epub,.txt" class="vh">
+        <div class="fileOk" id="fileOk">
+          <span style="font-size:22px" aria-hidden="true">✓</span>
+          <div><b id="fname">manuscript.pdf</b><small id="fmeta">Ready</small></div>
+        </div>
+        <p style="text-align:center;margin-top:10px">
+          <button type="button" class="exBtn" id="useSample">or use our sample manuscript instead</button>
+        </p>
+
+        <div class="fld" role="group" aria-labelledby="svcLbl">
+          <span class="flabel" id="svcLbl">What do you need?</span>
+          <p class="hint">Pick as many as you like. The plan and the price change based on what you choose.</p>
+          <div class="svcs">
+            <button type="button" class="svc" data-svc="publish" role="checkbox" aria-checked="false">
+              <span class="tick" aria-hidden="true"><span>✓</span></span>
+              <span class="ic" aria-hidden="true">📕</span>
+              <b>Publishing &amp; Cover</b>
+              <span class="cost">$75</span>
+              <small>Typesetting, print-ready interior, EPUB, store metadata, cover testing</small>
+            </button>
+            <button type="button" class="svc" data-svc="translate" role="checkbox" aria-checked="false">
+              <span class="tick" aria-hidden="true"><span>✓</span></span>
+              <span class="ic" aria-hidden="true">🌍</span>
+              <b>Translation</b>
+              <span class="cost">$100 per language</span>
+              <small>Glossary-consistent translation with native-speaker review</small>
+            </button>
+            <button type="button" class="svc" data-svc="market" role="checkbox" aria-checked="false">
+              <span class="tick" aria-hidden="true"><span>✓</span></span>
+              <span class="ic" aria-hidden="true">📣</span>
+              <b>Marketing</b>
+              <span class="cost">$50</span>
+              <small>Blurb and title testing, keywords, launch sequence, pricing</small>
+            </button>
+          </div>
+        </div>
+
+        <div class="fld hide" id="qCovers">
+          <span class="flabel">How many cover directions?</span>
+          <p class="hint">$10 each. Four gives readers a real choice to rank — that's what makes the cover test worth running.</p>
+          <div class="qrow">
+            <div class="qt"><b>Cover directions</b><small>Genuinely different approaches, not colour variants</small></div>
+            <div class="stepper">
+              <button type="button" id="covMinus" aria-label="One fewer cover direction">−</button>
+              <span class="val" id="covVal" aria-live="polite" aria-atomic="true">4</span>
+              <button type="button" id="covPlus" aria-label="One more cover direction">+</button>
+            </div>
+            <div class="qp" id="covPrice">$40</div>
+          </div>
+        </div>
+
+        <div class="fld hide" id="qLangs">
+          <span class="flabel">How many languages?</span>
+          <p class="hint">$100 each, including a native-speaker review of every language.</p>
+          <div class="qrow">
+            <div class="qt"><b>Translations</b><small id="langNames">Bookit picks up target languages from your description</small></div>
+            <div class="stepper">
+              <button type="button" id="lgMinus" aria-label="One fewer language">−</button>
+              <span class="val" id="lgVal" aria-live="polite" aria-atomic="true">1</span>
+              <button type="button" id="lgPlus" aria-label="One more language">+</button>
+            </div>
+            <div class="qp" id="lgPrice">$100</div>
+          </div>
+        </div>
+
+        <div class="fld">
+          <label class="flabel" for="budget">Your budget (optional)</label>
+          <p class="hint">Bookit checks the total against this live, and will offer to trim the order if you go over.</p>
+          <input type="number" id="budget" min="0" step="5" placeholder="e.g. 200" inputmode="numeric">
+        </div>
+
+        <div class="quote" id="quoteBox" aria-live="polite">
+          <div id="qLines"></div>
+          <div class="qsum"><span class="k">Total</span><span class="v" id="qTotal">$0</span></div>
+          <div class="bstat neutral" id="bStat"><span class="grow">Pick a service to see your price.</span></div>
+        </div>
+
+        <div class="fld">
+          <label class="flabel" for="ctx">Tell us about you and your book</label>
+          <p class="hint">Genre, who it's for, what you're trying to achieve, target languages, deadlines. Write like you're talking to a person.</p>
+          <textarea id="ctx" rows="6" placeholder="e.g. I've written a 60,000-word fantasy novel for young adults. It's my first book and I don't know anyone in publishing. I'd love a German edition because half my early readers are German. I want to sell it on Amazon."></textarea>
+          <button type="button" class="exBtn" id="useCtx">load the sample author's description</button>
+        </div>
+
+        <div class="totbar">
+          <p class="t" id="p0hint" style="margin:0">Add a manuscript and pick at least one service.</p>
+          <button type="button" class="btn" id="go" disabled>Build my publishing plan →</button>
+        </div>
+      </div>
+
+      <!-- PANE 1 -->
+      <div class="pane" id="p1">
+        <h3 class="serif" style="font-size:23px;margin:10px 0 2px">Reading your book.</h3>
+        <p style="margin-top:0;font-size:14.5px">The planning agent is working through your manuscript and your description.</p>
+        <div id="thinking" style="padding:26px 0" aria-live="polite"></div>
+      </div>
+
+      <!-- PANE 2 -->
+      <div class="pane" id="p2">
+        <div class="readout">
+          <p class="lbl" style="margin-bottom:9px">What the agent understood</p>
+          <div class="chips" id="chips"></div>
+        </div>
+        <h3 class="serif" style="font-size:23px;margin:0 0 4px">Your publishing plan</h3>
+        <p style="margin-top:0;font-size:14.6px" id="planIntro"></p>
+        <div id="items"></div>
+        <div class="totbar">
+          <p class="t" id="tot" style="margin:0"></p>
+          <button type="button" class="btn ghost sm" id="back">← Edit</button>
+          <button type="button" class="btn" id="run">Run it →</button>
+        </div>
+      </div>
+
+      <!-- PANE 3 -->
+      <div class="pane" id="p3">
+        <h3 class="serif" style="font-size:23px;margin:10px 0 4px">Bookit is publishing your book.</h3>
+        <p style="margin-top:0;font-size:14.5px">Agents run the mechanical work. Human tasks get posted to Terac and wait for real people.</p>
+        <ul class="runlist" id="runlist"></ul>
+
+        <div id="results" class="hide" style="margin-top:30px">
+          <p class="lbl">Cover directions · proof sheet</p>
+          <p style="margin:0 0 14px;font-size:14.5px">Generated for your genre. Bookit does <strong>not</strong> pick the winner — real readers do. <a href="#terac">See what they chose ↓</a></p>
+          <div class="covers" id="covers"></div>
+
+          <div id="glossaryBox" class="out hide">
+            <p class="lbl" style="margin-bottom:8px">Translation glossary</p>
+            <p style="margin:0 0 10px;font-size:14px">Named entities extracted so every chapter translates consistently.</p>
+            <div class="chips" id="glossary"></div>
+          </div>
+
+          <div class="out">
+            <p class="lbl" style="margin-bottom:8px">Back-cover blurb</p>
+            <p class="serif" id="blurbOut"></p>
+          </div>
+
+          <div class="out hide" id="mktBox">
+            <p class="lbl" style="margin-bottom:8px">Launch assets</p>
+            <div id="mktOut"></div>
+          </div>
+
+          <div class="out">
+            <p class="lbl" style="margin-bottom:8px">Files ready</p>
+            <p id="filesOut"></p>
+          </div>
+
+          <div class="note" style="margin-top:22px">
+            <p style="margin:0"><b>Human tasks are now live on Terac.</b> Bookit posted your cover test to a panel of real readers. When results come back, Bookit swaps in whatever they picked and re-renders your book — no human on our side touches it. <a href="#terac">This already happened for our sample book →</a></p>
+          </div>
+          <p style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
+            <button type="button" class="btn" id="toInvoice">Get my invoice →</button>
+            <a href="#terac" class="btn ghost">See the human verdict</a>
+            <button type="button" class="btn ghost" id="again">Start over</button>
+          </p>
+        </div>
+      </div>
+
+      <!-- PANE 4 -->
+      <div class="pane" id="p4">
+        <div class="invHead">
+          <div>
+            <p class="lbl" style="margin-bottom:6px"><span class="no">§ 07 /</span> Invoice</p>
+            <h3 class="serif" style="font-size:23px;margin:0 0 4px">Bookit sent you a bill.</h3>
+            <p style="margin:0;font-size:14.5px;max-width:520px">No one on our side wrote this. The agent priced the work it did, added the human testing it bought on your behalf, and issued the invoice itself.</p>
+          </div>
+          <p class="invMeta" style="margin:0">Docket<b id="invNo">BK-0000</b>
+            Dated<b id="invDate"></b>Terms<b>Due on receipt</b></p>
+        </div>
+
+        <table class="inv"><tbody id="invTable"></tbody></table>
+
+        <div class="invTot">
+          <div>
+            <p class="lbl" style="margin:0 0 2px">Total due</p>
+            <small style="display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);line-height:1.8">One-time · No subscription<br>No royalty share · No rights transfer</small>
+          </div>
+          <p class="invBig" id="invTotal" style="margin:0">$0</p>
+        </div>
+
+        <div id="payReady" class="hide">
+          <a class="btn" id="payBtn" href="#" target="_blank" rel="noopener"
+             style="width:100%;justify-content:center;padding:15px;font-size:16px;margin-top:18px">
+             Pay <span id="payAmt"></span> with Stripe →</a>
+          <p style="font-size:13px;color:var(--ink3);text-align:center;margin:10px 0 0">
+            Opens Stripe's hosted checkout. Bookit never sees your card details.
+            <br>Enter <strong id="payAmt2"></strong> as the amount at checkout.</p>
+        </div>
+
+        <div id="payMissing" class="pending" style="margin-top:18px">
+          <p style="margin:0 0 6px"><b>Payment link not configured.</b> This is the only setup step left.</p>
+          <p style="margin:0;font-size:13.5px">Open <code>index.html</code>, find <code>const PAY</code> near the top of the script, and paste your Stripe Payment Link between the quotes. Then this becomes a working checkout button.</p>
+        </div>
+
+        <div class="note" style="margin-top:22px">
+          <p style="margin:0"><b>What happens after you pay:</b> the human tasks on this invoice go live on Terac immediately, your files stay available in this project, and Bookit re-renders the book once the panel's verdict comes back. If a panel never reaches quota, that portion is refunded automatically.</p>
+        </div>
+
+        <p style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn ghost" id="backRes">← Back to results</button>
+          <button type="button" class="btn ghost" id="again2">Start over</button>
+        </p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- TERAC -->
+<div class="wrap sec" id="terac">
+  <div class="narrow">
+    <p class="lbl"><span class="no">§ 05 /</span> Human results · via Terac</p>
+    <h2 class="serif">The agent guessed. Then we asked real people.</h2>
+    <p class="lead">Bookit generated four covers for our sample book and ranked them. Then it hired a panel of readers through the Terac MCP and asked the only question that matters: <em>which of these would you actually pick up?</em></p>
+  </div>
+
+  <div id="baLive" class="hide" style="margin-top:26px">
+    <div class="ba">
+      <div class="before">
+        <h3>What the agent picked</h3>
+        <p class="pick" id="baA">—</p>
+        <p class="pct" id="baApct"></p>
+        <ul id="baAnotes"></ul>
+      </div>
+      <div class="after">
+        <h3>What real people picked</h3>
+        <p class="pick" id="baB">—</p>
+        <p class="pct" id="baBpct"></p>
+        <ul id="baBnotes"></ul>
+      </div>
+    </div>
+    <blockquote class="q" id="baQuote"></blockquote>
+    <p style="font-size:14px;color:var(--ink3);margin-top:18px" id="baMethod"></p>
+  </div>
+
+  <div id="baPending" class="pending" style="margin-top:26px">
+    <p style="margin:0 0 8px"><b>Live Terac results land here.</b> The study is recruiting right now. As soon as responses are in, the real numbers replace this box.</p>
+    <p style="margin:0;font-size:13.5px">Editing note for the team: open this file, find <code>TERAC</code> at the top of the script, paste the real numbers in, and this section switches itself on.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:28px">
+    <div class="card">
+      <p class="lbl">What we asked</p>
+      <ol style="margin:0;padding-left:19px;font-size:14.6px;color:var(--ink2)">
+        <li>Which of these four covers would you actually pick up in a bookstore?</li>
+        <li>Which one looks most professionally published?</li>
+        <li>Which of these three back-cover blurbs makes you most likely to read the book?</li>
+        <li>In your own words — what made you pick that one?</li>
+      </ol>
+    </div>
+    <div class="card">
+      <p class="lbl">Why this changes the product</p>
+      <p style="margin:0;font-size:14.6px">Bookit's cover ranking is a model's aesthetic preference. A reader's choice is a purchase signal. When those two disagree — and they did — the reader wins and the book ships differently. That gap <em>is</em> the product: it's the difference between a book that looks generated and a book that looks published.</p>
+    </div>
+  </div>
+</div>
+
+<!-- STACK -->
+<div class="wrap sec">
+  <div class="narrow">
+    <p class="lbl"><span class="no">§ 06 /</span> How it's built</p>
+    <h2 class="serif">The stack.</h2>
+  </div>
+  <table class="data">
+    <thead><tr><th scope="col">Layer</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+    <tr><td class="n"><strong>Terac MCP</strong></td><td>Recruits and pays the human panel. Bookit's agent creates a project, launches an opportunity with screening questions targeted at general readers, then polls for results and acts on them. This is the only part of the system that has taste.</td></tr>
+    <tr><td class="n"><strong>Planning agent</strong></td><td>Reads the manuscript and the author's own words, extracts intent (language, platform, genre, audience, budget), and emits a sequenced action plan with each item routed to either an agent or a human.</td></tr>
+    <tr><td class="n"><strong>Production agents</strong></td><td>Text extraction, named-entity glossary, typesetting, EPUB generation, cover synthesis, metadata and keyword research, launch copy.</td></tr>
+    <tr><td class="n"><strong>Stripe</strong></td><td>The agent prices the work and issues a payment link itself. No human on Bookit's side sends an invoice.</td></tr>
+    <tr><td class="n"><strong>Replay</strong></td><td>Automated QA. Explores the app, finds bugs and accessibility failures, reports root causes — our test suite, written by nobody.</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <p style="margin:0"><b>Why this is a "zero human company":</b> nobody at Bookit reads your manuscript, designs your cover, writes your blurb, or sends your invoice. Humans are still essential — but they enter as a <em>priced, on-demand input</em> the agent buys when it hits the edge of its own judgement, not as staff. That's the bet: the company has no employees, and still has 180,000 people working for it.</p>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <strong>Bookit &amp; Co.</strong> — a publishing house with no employees<br>
+    Set in Fraunces, Newsreader &amp; Space Mono · Printed on newsprint<br>
+    Zero Human Company Hackathon · Terac · Humanmade, San Francisco · 15 Aug 2026
+  </div>
+</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   1. PAYMENT — paste your Stripe Payment Link between the quotes.
+      Stripe Dashboard → Payment links → Create payment link
+      → price "Customer chooses price" → Copy link.
+      The payment link is PUBLIC by design and safe to put here.
+      NEVER put a secret key (sk_) or restricted key (rk_) in this file.
+   ═══════════════════════════════════════════════════════════════════ */
+const PAY = { link: "", currency: "$" };
+
+/* ═══════════════════════════════════════════════════════════════════
+   2. PRICES — change these numbers and the whole site follows.
+   ═══════════════════════════════════════════════════════════════════ */
+const PRICE = { publish: 75, perLanguage: 100, perCover: 10, market: 50 };
+
+/* ═══════════════════════════════════════════════════════════════════
+   3. TERAC RESULTS — paste real numbers, then set live: true.
+   ═══════════════════════════════════════════════════════════════════ */
+const TERAC = {
+  live: false,
+  n: 40,
+  launchedAt: "1:30pm",
+  agentPick: { key:"B", label:"Cover B", pct:11, notes:[
+    "Model ranked it #1 on composition and contrast",
+    "Only 11% of readers would pick it up",
+    "Most-cited word in the open responses: “template”" ]},
+  humanPick: { key:"D", label:"Cover D", pct:58, notes:[
+    "58% would pick it up in a bookstore",
+    "71% said it looked most professionally published",
+    "Bookit re-rendered the book with this cover automatically" ]},
+  quote: "Cover D looks like a real book. B looks like something generated.",
+  quoteBy: "Terac respondent, general reader panel",
+  extra: "Blurb test: the agent ranked our third blurb last. Readers ranked it first, 2 to 1. Bookit swapped it."
+};
+
+/* ── state ─────────────────────────────────────────────────────── */
+const S = { file:null, svc:new Set(), ctx:"", covers:4, langs:1, budget:null,
+            plan:[], sel:new Set(), read:null, lines:[], total:0 };
+
+const SAMPLE_CTX = "I've written a 62,000-word fantasy novel called The Salt Road, aimed at young adult readers who liked Piranesi and Uprooted. It's my first book and I have no contacts in publishing. About half of my early readers are German so I'd really like a German edition. I want to sell it on Amazon as an ebook and paperback. I'd like to launch within a month.";
+
+const $ = id => document.getElementById(id);
+const el = (t,c,h) => { const e=document.createElement(t); if(c)e.className=c; if(h!==undefined)e.innerHTML=h; return e; };
+const money = n => PAY.currency + n.toLocaleString();
+
+/* ── file ──────────────────────────────────────────────────────── */
+const drop=$('drop'), fileIn=$('file');
+drop.onclick = () => fileIn.click();
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hv')}));
+['dragleave','dragend'].forEach(ev=>drop.addEventListener(ev,()=>drop.classList.remove('hv')));
+drop.addEventListener('drop', e=>{e.preventDefault();drop.classList.remove('hv');
+  if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);});
+fileIn.onchange = e => { if(e.target.files[0]) setFile(e.target.files[0]); };
+$('useSample').onclick = () => setFile({name:"the-salt-road-manuscript.pdf", size:1240000, sample:true});
+
+function setFile(f){
+  S.file = f;
+  $('fname').textContent = f.name;
+  const mb = f.size ? (f.size/1048576).toFixed(1)+" MB" : "";
+  $('fmeta').textContent = [mb, f.sample?"62,000 words · 41 chapters detected":"parsed"].filter(Boolean).join(" · ");
+  $('fileOk').classList.add('on');
+  drop.classList.add('hide');
+  refresh();
+}
+
+/* ── services (keyboard accessible) ────────────────────────────── */
+document.querySelectorAll('.svc').forEach(s=>{
+  const toggle = () => {
+    const k=s.dataset.svc;
+    if(S.svc.has(k)){ S.svc.delete(k); s.classList.remove('on'); s.setAttribute('aria-checked','false'); }
+    else { S.svc.add(k); s.classList.add('on'); s.setAttribute('aria-checked','true'); }
+    refresh();
+  };
+  s.addEventListener('click', toggle);
+  s.addEventListener('keydown', e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggle(); } });
+});
+
+/* ── steppers ──────────────────────────────────────────────────── */
+function stepper(minusId, plusId, valId, get, set, min, max){
+  $(minusId).onclick = () => { if(get()>min){ set(get()-1); refresh(); } };
+  $(plusId).onclick  = () => { if(get()<max){ set(get()+1); refresh(); } };
+}
+stepper('covMinus','covPlus','covVal', ()=>S.covers, v=>S.covers=v, 1, 8);
+stepper('lgMinus','lgPlus','lgVal',   ()=>S.langs,  v=>S.langs=v,  1, 5);
+
+$('budget').oninput = () => {
+  const v = parseFloat($('budget').value);
+  S.budget = (isFinite(v) && v>0) ? Math.round(v) : null;
+  refresh();
+};
+$('ctx').oninput = refresh;
+$('useCtx').onclick = () => { $('ctx').value = SAMPLE_CTX; refresh(); };
+
+/* ── pricing ───────────────────────────────────────────────────── */
+function price(){
+  const L=[];
+  if(S.svc.has('publish')){
+    L.push({k:"Publishing & cover design", d:"Interior, EPUB, metadata, front matter, cover testing", v:PRICE.publish});
+    L.push({k:`Cover directions × ${S.covers}`, d:`${money(PRICE.perCover)} per design`, v:PRICE.perCover*S.covers});
+  }
+  if(S.svc.has('translate')){
+    const names = S.read && S.read.langs.length ? S.read.langs.slice(0,S.langs).join(", ") : "";
+    L.push({k:`Translation × ${S.langs} ${S.langs===1?"language":"languages"}`,
+            d:(names?names+" — ":"")+"glossary, translation, native-speaker review", v:PRICE.perLanguage*S.langs});
+  }
+  if(S.svc.has('market')){
+    L.push({k:"Marketing", d:"Blurb and title testing, keywords, launch sequence, pricing survey", v:PRICE.market});
+  }
+  return { lines:L, total:L.reduce((s,x)=>s+x.v,0) };
+}
+
+function refresh(){
+  S.ctx = $('ctx').value.trim();
+  S.read = readContext(S.ctx);
+
+  /* reveal the right steppers */
+  $('qCovers').classList.toggle('hide', !S.svc.has('publish'));
+  $('qLangs').classList.toggle('hide',  !S.svc.has('translate'));
+
+  /* keep language count sensible against what we detected */
+  if(S.read.langs.length > 1 && S.langs === 1 && S.svc.has('translate')) S.langs = Math.min(S.read.langs.length,5);
+  $('langNames').textContent = S.read.langs.length
+    ? "Detected in your description: " + S.read.langs.join(", ")
+    : "Bookit picks up target languages from your description";
+
+  $('covVal').textContent = S.covers;
+  $('lgVal').textContent  = S.langs;
+  $('covPrice').textContent = money(PRICE.perCover*S.covers);
+  $('lgPrice').textContent  = money(PRICE.perLanguage*S.langs);
+  $('covMinus').disabled = S.covers<=1; $('covPlus').disabled = S.covers>=8;
+  $('lgMinus').disabled  = S.langs<=1;  $('lgPlus').disabled  = S.langs>=5;
+
+  /* budget picked up from the description if the field is empty */
+  if(S.budget===null && S.read.budget) $('budget').placeholder = "we read " + money(S.read.budget) + " from your description";
+
+  const P = price();
+  S.lines = P.lines; S.total = P.total;
+
+  const box=$('qLines'); box.innerHTML='';
+  if(!P.lines.length) box.appendChild(el('p','qline','<span>Nothing selected yet</span><b>—</b>'));
+  P.lines.forEach(l=>box.appendChild(el('p','qline',
+    `<span>${l.k}<br><small style="color:var(--ink3)">${l.d}</small></span><b>${money(l.v)}</b>`)));
+  $('qTotal').textContent = money(P.total);
+
+  /* budget status */
+  const b = S.budget !== null ? S.budget : (S.read.budget || null);
+  const st = $('bStat');
+  st.className = 'bstat';
+  if(!P.lines.length){
+    st.classList.add('neutral');
+    st.innerHTML = '<span class="grow">Pick a service to see your price.</span>';
+  } else if(b===null){
+    st.classList.add('neutral');
+    st.innerHTML = '<span class="grow">No budget set. Add one above and Bookit will keep the order inside it.</span>';
+  } else if(P.total <= b){
+    st.classList.add('ok');
+    st.innerHTML = `<span class="grow">✓ Within your ${money(b)} budget — <b>${money(b-P.total)}</b> left over.</span>`;
+  } else {
+    st.classList.add('over');
+    const over = P.total - b;
+    st.innerHTML = `<span class="grow">Over budget by <b>${money(over)}</b>. Your budget is ${money(b)}, this order is ${money(P.total)}.</span>`;
+    const btn = el('button','btn sm','Trim to fit');
+    btn.type='button'; btn.onclick = () => trim(b);
+    st.appendChild(btn);
+  }
+
+  /* gate */
+  const ok = S.file && S.svc.size>0;
+  $('go').disabled = !ok;
+  $('p0hint').textContent = !S.file ? "Add a manuscript and pick at least one service."
+    : S.svc.size===0 ? "Pick at least one service."
+    : S.ctx.length<40 ? "Ready — though the more you tell us, the better the plan."
+    : "Ready. The agent has plenty to work with.";
+}
+
+/* trim the order to fit a budget, cheapest sacrifice first, and always
+   say what it could not do rather than silently failing */
+function trim(b){
+  const before = {covers:S.covers, langs:S.langs};
+  const dropped = [];
+  let guard = 40;
+  while(price().total > b && guard-- > 0){
+    if(S.covers > 1){ S.covers--; continue; }
+    if(S.langs > 1){ S.langs--; continue; }
+    if(S.svc.has('market')){ S.svc.delete('market'); dropped.push("Marketing"); syncCards(); continue; }
+    if(S.svc.has('translate')){ S.svc.delete('translate'); dropped.push("Translation"); syncCards(); continue; }
+    break;
+  }
+  const changed = [];
+  if(S.covers !== before.covers) changed.push(`cover directions ${before.covers} → ${S.covers}`);
+  if(S.langs !== before.langs)   changed.push(`languages ${before.langs} → ${S.langs}`);
+  if(dropped.length)             changed.push(`removed ${dropped.join(" and ")}`);
+
+  refresh();
+  const P = price();
+  const st = $('bStat');
+  if(P.total > b){
+    st.className = 'bstat over';
+    st.innerHTML = `<span class="grow"><b>Trimmed as far as it goes.</b> Publishing on its own is
+      ${money(PRICE.publish + PRICE.perCover)} — one cover included — so ${money(b)} can't cover a full
+      publish. Raise your budget to ${money(PRICE.publish + PRICE.perCover)}, or untick Publishing and
+      run Marketing (${money(PRICE.market)}) or Translation (${money(PRICE.perLanguage)}) on its own.</span>`;
+  } else if(changed.length){
+    st.className = 'bstat ok';
+    st.innerHTML = `<span class="grow">✓ Trimmed to fit ${money(b)} — now ${money(P.total)},
+      <b>${money(b-P.total)}</b> left over. Changed: ${changed.join("; ")}.
+      Put anything back and Bookit will flag it again.</span>`;
+  }
+}
+function syncCards(){
+  document.querySelectorAll('.svc').forEach(s=>{
+    const on = S.svc.has(s.dataset.svc);
+    s.classList.toggle('on', on);
+    s.setAttribute('aria-checked', on ? 'true':'false');
+  });
+  $('qCovers').classList.toggle('hide', !S.svc.has('publish'));
+  $('qLangs').classList.toggle('hide',  !S.svc.has('translate'));
+}
+
+/* ── panes ─────────────────────────────────────────────────────── */
+function pane(i){
+  [0,1,2,3,4].forEach(k=>{ $('p'+k).classList.toggle('on', k===i);
+    $('sb'+k).classList.toggle('on', k<=i); });
+  if(i!==0) $('demo').scrollIntoView({block:'start'});
+}
+
+/* ── context reader ────────────────────────────────────────────── */
+const LANGS = {german:"German",spanish:"Spanish",french:"French",japanese:"Japanese",
+  mandarin:"Mandarin",chinese:"Mandarin",portuguese:"Portuguese",italian:"Italian",
+  korean:"Korean",arabic:"Arabic",dutch:"Dutch",polish:"Polish",hindi:"Hindi",
+  swedish:"Swedish",turkish:"Turkish",russian:"Russian"};
+const GENRES = {fantasy:"fantasy",'science fiction':"science fiction",'sci-fi':"science fiction",
+  romance:"romance",thriller:"thriller",mystery:"mystery",horror:"horror",memoir:"memoir",
+  'self-help':"self-help",poetry:"poetry",'young adult':"YA",children:"children's",
+  literary:"literary fiction",business:"business",cookbook:"cookbook",history:"history",
+  'non-fiction':"non-fiction",nonfiction:"non-fiction",crime:"crime"};
+const PLATFORMS = {amazon:"Amazon KDP",kdp:"Amazon KDP",kobo:"Kobo",apple:"Apple Books",
+  ingram:"IngramSpark",audible:"Audible",barnes:"Barnes & Noble Press"};
+
+function readContext(txt){
+  const t=(txt||"").toLowerCase();
+  const find = m => { for(const k in m) if(t.includes(k)) return m[k]; return null; };
+  const langs=[]; for(const k in LANGS){ if(t.includes(k)&&!langs.includes(LANGS[k])) langs.push(LANGS[k]); }
+  const budget=(t.match(/\$\s?([\d,]+)/)||[])[1];
+  const words=(t.match(/([\d,]{3,})[\s-]*(?:word|words)/)||[])[1];
+  const title=(txt.match(/called\s+([A-Z][^.,\n]{2,45})/)||[])[1];
+  return {
+    genre: find(GENRES) || "general",
+    langs, platform: find(PLATFORMS),
+    budget: budget ? parseInt(budget.replace(/,/g,''),10) : null,
+    words: words || null,
+    title: title ? title.trim() : "Your Manuscript",
+    debut: /first book|debut|no contacts|don'?t know anyone|never published|first novel/.test(t),
+    audiobook: /audiobook|audible|narrat/.test(t),
+    series: /series|trilogy|sequel/.test(t),
+    deadline: /within a month|next month|deadline|asap|urgent|weeks/.test(t)
+  };
+}
+
+/* ── plan ──────────────────────────────────────────────────────── */
+function makePlan(r, svc){
+  const lang = (r.langs[0]) || "your target language";
+  const plat = r.platform || "Amazon KDP";
+  const CAP = 11;
+  const always=[{ph:0,t:"Extract and clean the manuscript",
+    w:`Parses your ${r.words?r.words+"-word ":""}file, repairs broken paragraphs, normalises quotes and dashes, and detects chapter boundaries. Everything downstream depends on this being right.`,
+    o:"agent", in:"Publishing"}];
+
+  const bucket={
+    translate:[
+      {ph:1,t:`Build a ${lang} translation glossary`,w:`Extracts every character, place and invented term from your ${r.genre} manuscript and locks a single ${lang} rendering for each — so chapter 40 doesn't rename your protagonist.`,o:"agent",in:"Translation"},
+      {ph:3,t:`Native ${lang} speaker reviews the sample`,w:"A fluent reader marks anything that sounds machine-written and rewrites the worst passages. Bookit feeds their corrections back before translating the rest.",o:"human",in:"Translation"},
+      {ph:2,t:`Translate a sample chapter into ${lang}`,w:"A full-book translation before you've checked quality is how money gets wasted. One chapter first, glossary-locked, so a human can judge it.",o:"agent",in:"Translation"},
+      {ph:3,t:`Localise the title and blurb for the ${lang} market`,w:"Literal title translations regularly land badly. Three localised options, tested with real readers rather than chosen by a model.",o:"human",in:"Translation"}
+    ],
+    publish:[
+      {ph:1,t:"Typeset a print-ready interior",w:`Applies ${r.genre==="general"?"trade fiction":r.genre} conventions — running heads, drop caps, correct gutters and bleed — and outputs a press-ready PDF plus a reflowable EPUB that passes store validation.`,o:"agent",in:"Publishing"},
+      {ph:3,t:"Cover test with real readers",w:"The one thing an agent cannot do. Real people pick which cover they'd take off a shelf. Bookit ships their answer, not the model's.",o:"human",in:"Publishing"},
+      {ph:2,t:"",w:"",o:"agent",in:"Covers"},  /* filled below, depends on count */
+      {ph:4,t:`Write ${plat} metadata, categories and keywords`,w:"Category placement decides whether anyone finds your book. Builds the description, seven backend keywords, and the two categories with the best rank-to-competition ratio.",o:"agent",in:"Publishing"},
+      {ph:4,t:"Assemble front and back matter",w:"Copyright page, title page, dedication, also-by, and an author bio drafted from your own description.",o:"agent",in:"Publishing"}
+    ],
+    market:[
+      {ph:3,t:"Blurb test with target readers",w:`Three back-cover blurbs, ranked by people who actually read ${r.genre==="general"?"in your genre":r.genre}. The blurb is the highest-leverage 150 words in the whole book.`,o:"human",in:"Marketing"},
+      {ph:4,t:`Build the ${plat} launch sequence`,w:"A five-post launch run, an author bio, three ad angles derived from what test readers actually said, and a twelve-week calendar.",o:"agent",in:"Marketing"},
+      {ph:3,t:"Title test",w:"Your title, plus two alternatives the agent thinks are stronger, put in front of readers cold. Occasionally humbling.",o:"human",in:"Marketing"},
+      {ph:3,t:"Price-point survey",w:`Asks readers in your genre what they'd expect to pay. Debut ${r.genre} pricing is guessed far more often than it's measured.`,o:"human",in:"Marketing"}
+    ]
+  };
+  bucket.publish[2].t = `Generate ${S.covers} cover direction${S.covers===1?"":"s"}`;
+  bucket.publish[2].w = S.covers>1
+    ? `${S.covers} genuinely different approaches for ${r.genre==="general"?"your genre":r.genre} — typographic, illustrated, photographic and a deliberately conventional control — so the reader panel has a real choice to rank.`
+    : `One cover direction for ${r.genre==="general"?"your genre":r.genre}. Ordering more gives the reader panel something to compare against, which is where the useful signal comes from.`;
+
+  const extras=[];
+  if(r.debut) extras.push({ph:4,t:"Author positioning one-pager",w:"You mentioned this is your first book with no publishing contacts, so Bookit writes the thing you'd otherwise need an agent for: a one-page pitch with comparable titles and your audience.",o:"agent",in:"Publishing"});
+  if(r.series) extras.push({ph:1,t:"Series bible",w:"Locks names, timeline and terminology across books so book two doesn't contradict book one — and so translators stay consistent.",o:"agent",in:"Publishing"});
+  if(r.audiobook) extras.push({ph:4,t:"Audiobook readiness pass",w:"Flags footnotes, tables and visual jokes that break in audio, and outputs a narration-ready script.",o:"agent",in:"Publishing"});
+
+  const active=['publish','translate','market'].filter(k=>svc.has(k));
+  let P=always.slice();
+  const room=()=>CAP-P.length-(extras.length?1:0);
+  for(let i=0; room()>0; i++){
+    let took=false;
+    for(const k of active){ if(room()<=0) break; if(bucket[k][i]){ P.push(bucket[k][i]); took=true; } }
+    if(!took) break;
+  }
+  if(extras.length && P.length<CAP) P.push(extras[0]);
+  return P.sort((a,b)=>a.ph-b.ph).slice(0,CAP);
+}
+
+const THINK=["Parsing manuscript structure and chapter boundaries",
+  "Reading your description for intent, language and budget",
+  "Extracting named entities and recurring terminology",
+  "Matching against genre conventions and store requirements",
+  "Deciding which steps need a human eye",
+  "Sequencing the plan"];
+
+$('go').onclick = () => {
+  S.read = readContext(S.ctx);
+  S.plan = makePlan(S.read, S.svc);
+  pane(1);
+  const box=$('thinking'); box.innerHTML='';
+  THINK.forEach((t,i)=>{
+    const row=el('p','',`<span class="vh">Step ${i+1}: </span>${t}`);
+    row.style.cssText='margin:0;padding:7px 0;font-size:14.5px;opacity:0;transition:.35s';
+    box.appendChild(row);
+    setTimeout(()=>{row.style.opacity='1'}, 90+i*290);
+  });
+  setTimeout(renderPlan, 200+THINK.length*290+420);
+};
+
+function renderPlan(){
+  const r=S.read, c=$('chips'); c.innerHTML='';
+  const cs=[["Genre",r.genre]];
+  if(r.words) cs.push(["Length",r.words+" words"]);
+  if(S.svc.has('translate')) cs.push(["Languages", (r.langs.slice(0,S.langs).join(", ")||S.langs)]);
+  if(S.svc.has('publish')) cs.push(["Covers", S.covers]);
+  if(r.platform) cs.push(["Selling on",r.platform]);
+  cs.push(["Order total", money(S.total)]);
+  if(r.debut) cs.push(["Author","first-time, no contacts"]);
+  if(r.deadline) cs.push(["Timing","wants to move fast"]);
+  cs.forEach(([k,v])=>c.appendChild(el('span','chip',k+': <b>'+v+'</b>')));
+
+  const humans=S.plan.filter(x=>x.o==="human").length;
+  $('planIntro').innerHTML = `${S.plan.length} action items — <strong>${S.plan.length-humans}</strong> the agents handle themselves, <strong>${humans}</strong> that need real people. All of it is covered by your ${money(S.total)} order; unticking items doesn't change the price, it changes what gets done.`;
+
+  const box=$('items'); box.innerHTML=''; S.sel=new Set();
+  S.plan.forEach((it,i)=>{
+    const b=el('button','ai on');
+    b.type='button'; b.setAttribute('role','checkbox'); b.setAttribute('aria-checked','true');
+    b.innerHTML=`<span class="cb" aria-hidden="true"><span>✓</span></span><span class="bd">
+      <h4>${it.t} <span class="badge ${it.o==="human"?"hu":"ag"}"><span class="dot"></span>${it.o==="human"?"Human via Terac":"Agent"}</span></h4>
+      <p>${it.w}</p>
+      <span class="meta"><span>Covered by <b>${it.in}</b></span></span></span>`;
+    const tog=()=>{ if(S.sel.has(i)){S.sel.delete(i);b.classList.remove('on');b.setAttribute('aria-checked','false');}
+      else{S.sel.add(i);b.classList.add('on');b.setAttribute('aria-checked','true');} tot(); };
+    b.onclick=tog;
+    b.addEventListener('keydown',e=>{ if(e.key===' '||e.key==='Enter'){e.preventDefault();tog();} });
+    box.appendChild(b); S.sel.add(i);
+  });
+  tot(); pane(2);
+}
+function tot(){
+  $('tot').innerHTML = `<b>${S.sel.size}</b> of ${S.plan.length} items selected · order total <b>${money(S.total)}</b>`;
+  $('run').disabled = S.sel.size===0;
+}
+$('back').onclick = ()=>pane(0);
+
+/* ── run ───────────────────────────────────────────────────────── */
+$('run').onclick = () => {
+  pane(3);
+  const list=$('runlist'); list.innerHTML=''; $('results').classList.add('hide');
+  const chosen=[...S.sel].sort((a,b)=>a-b).map(i=>S.plan[i]);
+  chosen.forEach(it=>{
+    const li=el('li','');
+    li.innerHTML=`<span class="st" aria-hidden="true"></span><span class="tx"><b>${it.t}</b>
+      <small>${it.o==="human"?"Posting to Terac and recruiting a panel…":"Running…"}</small></span>`;
+    list.appendChild(li);
+  });
+  const lis=[...list.children];
+  lis.forEach((li,i)=>{
+    setTimeout(()=>li.classList.add('on'), 110+i*380);
+    setTimeout(()=>{ li.classList.add('ok');
+      li.querySelector('small').textContent = chosen[i].o==="human"
+        ? "Opportunity live on Terac · panel recruiting · results feed back automatically" : "Done";
+    }, 110+i*380+300);
+  });
+  setTimeout(renderResults, 200+lis.length*380+450);
+};
+
+/* ── covers ────────────────────────────────────────────────────── */
+function coverSVG(kind, title, author, genre){
+  const T = title.length>26 ? title.slice(0,24)+"…" : title;
+  const w = T.split(/\s+/);
+  const l1 = w.slice(0,Math.ceil(w.length/2)).join(" ");
+  const l2 = w.slice(Math.ceil(w.length/2)).join(" ");
+  const box=(inner,bg)=>`<svg viewBox="0 0 300 450" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cover direction: ${T} by ${author}"><rect width="300" height="450" fill="${bg}"/>${inner}</svg>`;
+  const ser='font-family="Georgia,serif"', san='font-family="Helvetica,Arial,sans-serif"';
+
+  if(kind==='A') return box(`
+    <line x1="34" y1="86" x2="266" y2="86" stroke="#1b1b1b" stroke-width="1"/>
+    <line x1="34" y1="364" x2="266" y2="364" stroke="#1b1b1b" stroke-width="1"/>
+    <text x="150" y="70" ${san} font-size="9.5" letter-spacing="4" fill="#6b6156" text-anchor="middle">A NOVEL</text>
+    <text x="150" y="200" ${ser} font-size="35" fill="#171717" text-anchor="middle">${l1}</text>
+    <text x="150" y="240" ${ser} font-size="35" fill="#171717" text-anchor="middle">${l2}</text>
+    <text x="150" y="352" ${san} font-size="11" letter-spacing="3" fill="#3f382f" text-anchor="middle">${author.toUpperCase()}</text>`,"#f3ece1");
+
+  if(kind==='B') return box(`
+    <defs><linearGradient id="gb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3d6fb5"/><stop offset="1" stop-color="#8fb6dd"/></linearGradient></defs>
+    <rect width="300" height="450" fill="url(#gb)"/>
+    <circle cx="150" cy="168" r="52" fill="#ffffff" opacity=".26"/>
+    <text x="150" y="262" ${san} font-size="27" font-weight="bold" fill="#ffffff" text-anchor="middle">${l1}</text>
+    <text x="150" y="292" ${san} font-size="27" font-weight="bold" fill="#ffffff" text-anchor="middle">${l2}</text>
+    <rect x="106" y="312" width="88" height="2" fill="#ffffff" opacity=".7"/>
+    <text x="150" y="338" ${san} font-size="12" fill="#f2f7fb" text-anchor="middle">${author}</text>`,"#3d6fb5");
+
+  if(kind==='C') return box(`
+    <circle cx="150" cy="132" r="46" fill="#e0a84a"/>
+    <path d="M0 330 L74 214 L134 300 L196 190 L300 330 Z" fill="#2d4a42"/>
+    <path d="M0 360 L96 258 L182 360 Z" fill="#1e3530" opacity=".9"/>
+    <rect y="330" width="300" height="120" fill="#1e3530"/>
+    <text x="150" y="378" ${ser} font-size="27" fill="#f6efe3" text-anchor="middle">${l1}</text>
+    <text x="150" y="406" ${ser} font-size="27" fill="#f6efe3" text-anchor="middle">${l2}</text>
+    <text x="150" y="430" ${san} font-size="9.5" letter-spacing="3" fill="#d3c1a0" text-anchor="middle">${author.toUpperCase()}</text>`,"#f6efe3");
+
+  return box(`
+    <defs><linearGradient id="gd" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14100c"/><stop offset=".55" stop-color="#2b1d12"/>
+      <stop offset="1" stop-color="#0c0a08"/></linearGradient></defs>
+    <rect width="300" height="450" fill="url(#gd)"/>
+    <g opacity=".55" fill="#e9cf9a"><circle cx="60" cy="60" r="1.4"/><circle cx="240" cy="96" r="1.1"/>
+      <circle cx="196" cy="44" r="1"/><circle cx="96" cy="120" r="1.2"/>
+      <circle cx="268" cy="176" r="1"/><circle cx="34" cy="200" r="1.1"/></g>
+    <circle cx="150" cy="176" r="58" fill="none" stroke="#d9b26a" stroke-width="1.2"/>
+    <circle cx="150" cy="176" r="46" fill="none" stroke="#d9b26a" stroke-width=".6" opacity=".65"/>
+    <path d="M150 138 L162 170 L196 176 L162 182 L150 214 L138 182 L104 176 L138 170 Z" fill="#e3c485"/>
+    <text x="150" y="306" ${ser} font-size="32" fill="#f0e2c4" text-anchor="middle">${l1}</text>
+    <text x="150" y="342" ${ser} font-size="32" fill="#f0e2c4" text-anchor="middle">${l2}</text>
+    <line x1="112" y1="366" x2="188" y2="366" stroke="#d9b26a" stroke-width=".8"/>
+    <text x="150" y="392" ${san} font-size="10.5" letter-spacing="3.5" fill="#c9a976" text-anchor="middle">${author.toUpperCase()}</text>`,"#14100c");
+}
+
+const GLOSS={fantasy:["Aerith Vale","the Salt Road","Thornhold","Sunder-glass","the Marrowmere","Keeper Ivane","tidewright","the Ninefold Court","Grey Verge","saltbinding"],
+  general:["the Northgate","Marion Reyes","Halloway & Sons","the Chandler Building","Verity Lane","Ash Combe","Dr. Osei","Pellam Street"]};
+const KINDS=['A','B','C','D'];
+
+function renderResults(){
+  const r=S.read;
+  const title = r.title==="Your Manuscript" ? "The Salt Road" : r.title;
+  const author="A. Author";
+  const cov=$('covers'); cov.innerHTML='';
+  for(let i=0;i<S.covers;i++){
+    const letter=String.fromCharCode(65+i);
+    const d=el('div','cv');
+    d.innerHTML=`<span class="lb" aria-hidden="true">${letter}</span>
+      ${coverSVG(KINDS[i%4],title,author,r.genre)}<p class="cap">Direction ${letter}</p>`;
+    if(TERAC.live && letter===TERAC.humanPick.key){
+      d.classList.add('win');
+      d.insertBefore(el('span','wb','Chosen by '+TERAC.n+' readers'), d.firstChild);
+      d.querySelector('.cap').textContent=`Direction ${letter} — ${TERAC.humanPick.pct}% of readers`;
+    } else if(TERAC.live && letter===TERAC.agentPick.key){
+      d.querySelector('.cap').innerHTML=`Direction ${letter} — <span style="color:var(--ink3)">the agent's pick, ${TERAC.agentPick.pct}%</span>`;
+    }
+    cov.appendChild(d);
+  }
+
+  if(S.svc.has('translate')){
+    $('glossaryBox').classList.remove('hide');
+    const g=$('glossary'); g.innerHTML='';
+    (GLOSS[r.genre]||GLOSS.general).forEach(t=>g.appendChild(el('span','chip',t)));
+  } else $('glossaryBox').classList.add('hide');
+
+  $('blurbOut').textContent = (r.genre==="fantasy"||r.genre==="general")
+    ? "Every hundred years the salt road opens, and every hundred years it takes someone who did not mean to go. Aerith Vale has spent her life keeping the ledger of the taken — until the newest name written in her own hand is her sister's. To cross the road is to be unwritten. To leave it closed is to lose her anyway."
+    : `A ${r.genre} book that knows exactly who it's for. Blurb drafted from your own description, then tested with real readers before it ships.`;
+
+  if(S.svc.has('market')){
+    $('mktBox').classList.remove('hide');
+    $('mktOut').innerHTML = `<p style="margin:0 0 9px;font-size:14.6px"><strong>${r.platform||"Amazon KDP"} keywords:</strong> ${r.genre} debut, slow-burn ${r.genre}, lyrical fantasy, portal fantasy standalone, YA crossover fantasy, literary fantasy</p>
+      <p style="margin:0 0 9px;font-size:14.6px"><strong>Categories:</strong> Fantasy → Myths &amp; Legends · Coming of Age Fantasy <span style="color:var(--ink3)">(picked for rank-to-competition ratio, not volume)</span></p>
+      <p style="margin:0;font-size:14.6px"><strong>Launch run:</strong> 5 posts over 9 days, three ad angles written from what test readers actually said, plus a 12-week calendar.</p>`;
+  } else $('mktBox').classList.add('hide');
+
+  const f=[];
+  if(S.svc.has('publish')) f.push("<b>interior-print.pdf</b>","<b>ebook.epub</b>",`<b>covers-a-to-${String.fromCharCode(64+S.covers).toLowerCase()}.zip</b>`,"<b>metadata.json</b>");
+  if(S.svc.has('translate')) f.push(`<b>chapter-01-${(r.langs[0]||"target").toLowerCase()}.docx</b>`,"<b>glossary.csv</b>");
+  if(S.svc.has('market')) f.push("<b>launch-plan.md</b>","<b>keywords.csv</b>");
+  $('filesOut').innerHTML=f.join(" · ");
+  $('results').classList.remove('hide');
+}
+
+/* ── invoice ───────────────────────────────────────────────────── */
+$('toInvoice').onclick = ()=>{ renderInvoice(); pane(4); };
+$('backRes').onclick  = ()=>pane(3);
+$('again').onclick    = ()=>location.reload();
+$('again2').onclick   = ()=>location.reload();
+
+function renderInvoice(){
+  const t=$('invTable'); t.innerHTML='';
+  S.lines.forEach(l=>{
+    const tr=el('tr','');
+    tr.innerHTML=`<td><span class="ttl">${l.k}</span><span class="sub">${l.d}</span></td>
+      <td class="amt">${money(l.v)}</td>`;
+    t.appendChild(tr);
+  });
+  const humans=S.plan.filter(x=>x.o==="human").length;
+  if(humans){
+    const tr=el('tr','');
+    tr.innerHTML=`<td><span class="ttl">Human testing on Terac — ${humans} ${humans===1?"task":"tasks"}</span>
+      <span class="sub">Paid to the people who do the work. Already included in the prices above, shown so you can see it.</span></td>
+      <td class="amt" style="font-weight:500;color:var(--ink3)">included</td>`;
+    t.appendChild(tr);
+  }
+  $('invTotal').textContent = money(S.total);
+  $('invNo').textContent = "BK-" + String(1000+Math.floor(Math.random()*8999));
+  $('invDate').textContent = new Date().toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+
+  if(PAY.link && /^https:\/\//.test(PAY.link)){
+    $('payReady').classList.remove('hide'); $('payMissing').classList.add('hide');
+    $('payBtn').href = PAY.link;
+    $('payAmt').textContent = money(S.total);
+    $('payAmt2').textContent = money(S.total);
+  } else {
+    $('payReady').classList.add('hide'); $('payMissing').classList.remove('hide');
+  }
+}
+
+/* ── Terac section ─────────────────────────────────────────────── */
+if(TERAC.live){
+  $('baPending').classList.add('hide');
+  $('baLive').classList.remove('hide');
+  $('baA').textContent = TERAC.agentPick.label;
+  $('baApct').textContent = TERAC.agentPick.pct + "% of readers would pick it up";
+  $('baB').textContent = TERAC.humanPick.label;
+  $('baBpct').textContent = TERAC.humanPick.pct + "% of readers would pick it up";
+  const fill=(id,arr)=>{const u=$(id);u.innerHTML='';arr.forEach(x=>u.appendChild(el('li','',x)));};
+  fill('baAnotes',TERAC.agentPick.notes); fill('baBnotes',TERAC.humanPick.notes);
+  $('baQuote').innerHTML = "&ldquo;"+TERAC.quote+"&rdquo;<cite>— "+TERAC.quoteBy+"</cite>";
+  $('baMethod').innerHTML = `<strong>Method:</strong> ${TERAC.n} respondents recruited through the Terac MCP, general reader panel, launched ${TERAC.launchedAt} today. Shown cold with no context. ${TERAC.extra}`;
+}
+
+refresh();
+</script>
+</body>
+</html>
