@@ -1,14 +1,18 @@
 """The planning agent.
 
-Reads the author's own words, extracts intent, and emits a priced, sequenced
-action plan with each item routed to either an agent or a human via Terac.
-This is a direct port of the logic that ran client-side in index.html.
+Reads the author's own words, extracts intent, and emits a sequenced action
+plan with each item routed to either an agent or a human via Terac. Pricing is
+order-level (flat tariff), not per item — `price_order` builds the live quote
+and `trim_order` shrinks an order to fit a budget. This is a direct port of
+the logic that ran client-side in index_1.html.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+
+from bookit.content import PRICE
 
 # Ordered on purpose: the first key found in the text wins, exactly like the
 # original `for (const k in map)` lookup.
@@ -38,7 +42,9 @@ PLATFORMS = {
     "barnes": "Barnes & Noble Press",
 }
 
-CAP = 9  # hard ceiling on plan length — a plan nobody reads is not a plan
+CAP = 11        # hard ceiling on plan length — a plan nobody reads is not a plan
+MAX_COVERS = 8  # stepper bounds for the order form
+MAX_LANGS = 5
 
 
 @dataclass
@@ -60,28 +66,17 @@ class Reading:
 
 @dataclass
 class PlanItem:
-    """One action item: what it is, who does it, what it costs, how long."""
+    """One action item: what it is, who does it, which line item covers it."""
 
     phase: int
     title: str
     why: str
-    cost: int
-    hours: float
-    owner: str  # "agent" | "human"
+    owner: str    # "agent" | "human"
+    covered: str  # which tariff line pays for it, e.g. "Publishing"
 
     @property
     def is_human(self) -> bool:
         return self.owner == "human"
-
-    @property
-    def cost_label(self) -> str:
-        return "included" if self.cost == 0 else f"${self.cost}"
-
-    @property
-    def eta_label(self) -> str:
-        if self.hours < 1:
-            return f"{round(self.hours * 60)} min"
-        return f"{self.hours:g} hrs"
 
 
 def _find(text: str, table: dict[str, str]) -> str | None:
@@ -121,7 +116,60 @@ def read_context(txt: str) -> Reading:
     )
 
 
-def make_plan(r: Reading, services: set[str]) -> list[PlanItem]:
+# ── the tariff ────────────────────────────────────────────────────────
+def price_order(services: set[str], covers: int, langs: int,
+                lang_names: list[str] | None = None) -> tuple[list[dict], int]:
+    """The live quote: one line per tariff item, plus the total."""
+    lines: list[dict] = []
+    if "publish" in services:
+        lines.append({"k": "Publishing & cover design",
+                      "d": "Interior, EPUB, metadata, front matter, cover testing",
+                      "v": PRICE["publish"]})
+        lines.append({"k": f"Cover directions × {covers}",
+                      "d": f"${PRICE['per_cover']} per design",
+                      "v": PRICE["per_cover"] * covers})
+    if "translate" in services:
+        names = ", ".join((lang_names or [])[:langs])
+        lines.append({"k": f"Translation × {langs} {'language' if langs == 1 else 'languages'}",
+                      "d": (names + " — " if names else "")
+                           + "glossary, translation, native-speaker review",
+                      "v": PRICE["per_language"] * langs})
+    if "market" in services:
+        lines.append({"k": "Marketing",
+                      "d": "Blurb and title testing, keywords, launch sequence, pricing survey",
+                      "v": PRICE["market"]})
+    return lines, sum(x["v"] for x in lines)
+
+
+def trim_order(budget: int, services: set[str], covers: int,
+               langs: int) -> tuple[set[str], int, int, list[str]]:
+    """Shrink an order until it fits the budget, cheapest sacrifice first.
+
+    Returns the trimmed (services, covers, langs) plus the names of any
+    services that had to be dropped entirely — so the app can always say what
+    it could not do rather than silently failing.
+    """
+    services = set(services)
+    dropped: list[str] = []
+    for _ in range(40):
+        if price_order(services, covers, langs)[1] <= budget:
+            break
+        if covers > 1:
+            covers -= 1
+        elif langs > 1:
+            langs -= 1
+        elif "market" in services:
+            services.discard("market")
+            dropped.append("Marketing")
+        elif "translate" in services:
+            services.discard("translate")
+            dropped.append("Translation")
+        else:
+            break
+    return services, covers, langs, dropped
+
+
+def make_plan(r: Reading, services: set[str], covers: int = 4) -> list[PlanItem]:
     """Build a plan for *this* book, not a checklist."""
     lang = r.langs[0] if r.langs else "your target language"
     plat = r.platform or "Amazon KDP"
@@ -133,61 +181,71 @@ def make_plan(r: Reading, services: set[str]) -> list[PlanItem]:
         PlanItem(0, "Extract and clean the manuscript",
                  f"Parses your {r.words + '-word ' if r.words else ''}file, repairs broken "
                  "paragraphs, normalises quotes and dashes, and detects chapter boundaries. "
-                 "Everything downstream depends on this being right.", 0, 0.2, "agent"),
+                 "Everything downstream depends on this being right.", "agent", "Publishing"),
     ]
+
+    covers_why = (
+        f"{covers} genuinely different approaches for {genre_or_yours} — typographic, "
+        "illustrated, photographic and a deliberately conventional control — so the reader "
+        "panel has a real choice to rank."
+        if covers > 1 else
+        f"One cover direction for {genre_or_yours}. Ordering more gives the reader panel "
+        "something to compare against, which is where the useful signal comes from.")
 
     bucket: dict[str, list[PlanItem]] = {
         "translate": [
             PlanItem(1, f"Build a {lang} translation glossary",
                      f"Extracts every character, place and invented term from your {r.genre} "
                      f"manuscript and locks a single {lang} rendering for each — so chapter 40 "
-                     "doesn't rename your protagonist.", 0, 0.4, "agent"),
+                     "doesn't rename your protagonist.", "agent", "Translation"),
             PlanItem(3, f"Native {lang} speaker reviews the sample",
                      "A fluent reader marks anything that sounds machine-written and rewrites "
-                     "the worst three passages. Bookit feeds their corrections back before "
-                     "translating the rest.", 58, 2, "human"),
+                     "the worst passages. Bookit feeds their corrections back before "
+                     "translating the rest.", "human", "Translation"),
             PlanItem(2, f"Translate a sample chapter into {lang}",
                      "A full-book translation before you've checked quality is how money gets "
                      "wasted. One chapter first, glossary-locked, so a human can judge it.",
-                     9, 0.6, "agent"),
+                     "agent", "Translation"),
             PlanItem(3, f"Localise the title and blurb for the {lang} market",
                      "Literal title translations regularly land badly. Three localised options, "
-                     f"tested with {lang} readers rather than chosen by a model.", 26, 1.5, "human"),
+                     "tested with real readers rather than chosen by a model.",
+                     "human", "Translation"),
         ],
         "publish": [
             PlanItem(1, "Typeset a print-ready interior",
                      f"Applies {typeset_conv} conventions — running heads, drop caps, correct "
                      "gutters and bleed — and outputs a press-ready PDF plus a reflowable EPUB "
-                     "that passes store validation.", 0, 0.5, "agent"),
+                     "that passes store validation.", "agent", "Publishing"),
             PlanItem(3, "Cover test with real readers",
                      "The one thing an agent cannot do. Real people pick which cover they'd take "
-                     "off a shelf. Bookit ships their answer, not the model's.", 42, 1.5, "human"),
-            PlanItem(2, "Generate four cover directions",
-                     f"Four genuinely different approaches for {genre_or_yours}: typographic, "
-                     "illustrated, photographic, and a deliberately conventional one as a control.",
-                     11, 0.4, "agent"),
+                     "off a shelf. Bookit ships their answer, not the model's.",
+                     "human", "Publishing"),
+            PlanItem(2, f"Generate {covers} cover direction{'' if covers == 1 else 's'}",
+                     covers_why, "agent", "Covers"),
             PlanItem(4, f"Write {plat} metadata, categories and keywords",
                      "Category placement decides whether anyone finds your book. Builds the "
                      "description, seven backend keywords, and the two categories with the best "
-                     "rank-to-competition ratio.", 0, 0.3, "agent"),
+                     "rank-to-competition ratio.", "agent", "Publishing"),
             PlanItem(4, "Assemble front and back matter",
                      "Copyright page, title page, dedication, also-by, and an author bio drafted "
-                     "from your own description.", 0, 0.2, "agent"),
+                     "from your own description.", "agent", "Publishing"),
         ],
         "market": [
             PlanItem(3, "Blurb test with target readers",
                      f"Three back-cover blurbs, ranked by people who actually read {in_your_genre}. "
                      "The blurb is the highest-leverage 150 words in the whole book.",
-                     34, 1.5, "human"),
+                     "human", "Marketing"),
             PlanItem(4, f"Build the {plat} launch sequence",
                      "A five-post launch run, an author bio, three ad angles derived from what "
-                     "test readers actually said, and a twelve-week calendar.", 0, 0.6, "agent"),
+                     "test readers actually said, and a twelve-week calendar.",
+                     "agent", "Marketing"),
             PlanItem(3, "Title test",
                      "Your title, plus two alternatives the agent thinks are stronger, put in "
-                     "front of readers cold. Occasionally humbling.", 28, 1.2, "human"),
+                     "front of readers cold. Occasionally humbling.", "human", "Marketing"),
             PlanItem(3, "Price-point survey",
                      f"Asks readers in your genre what they'd expect to pay. Debut {r.genre} "
-                     "pricing is guessed far more often than it's measured.", 24, 1.2, "human"),
+                     "pricing is guessed far more often than it's measured.",
+                     "human", "Marketing"),
         ],
     }
 
@@ -197,17 +255,17 @@ def make_plan(r: Reading, services: set[str]) -> list[PlanItem]:
             4, "Author positioning one-pager",
             "You mentioned this is your first book with no publishing contacts, so Bookit writes "
             "the thing you'd otherwise need an agent for: a one-page pitch with comparable titles "
-            "and your audience, ready to send to anyone.", 0, 0.3, "agent"))
+            "and your audience.", "agent", "Publishing"))
     if r.series:
         extras.append(PlanItem(
             1, "Series bible",
             "Locks names, timeline and terminology across books so book two doesn't contradict "
-            "book one — and so translators stay consistent.", 0, 0.4, "agent"))
+            "book one — and so translators stay consistent.", "agent", "Publishing"))
     if r.audiobook:
         extras.append(PlanItem(
             4, "Audiobook readiness pass",
             "Flags footnotes, tables and visual jokes that break in audio, and outputs a "
-            "narration-ready script.", 0, 0.4, "agent"))
+            "narration-ready script.", "agent", "Publishing"))
 
     # Round-robin across the services the author actually chose, so every
     # selected service is represented even when the cap bites.
@@ -232,30 +290,6 @@ def make_plan(r: Reading, services: set[str]) -> list[PlanItem]:
 
     if extras and len(plan) < CAP:
         plan.append(extras[0])
-
-    # Budget discipline: drop the priciest human task until the plan fits, but
-    # never drop the last one — the human step is the point of Bookit.
-    if r.budget:
-        def total() -> int:
-            return sum(x.cost for x in plan)
-
-        while total() > r.budget and len([x for x in plan if x.is_human]) > 1:
-            worst, worst_cost = -1, -1
-            for idx, item in enumerate(plan):
-                if item.is_human and item.cost > worst_cost:
-                    worst_cost, worst = item.cost, idx
-            if worst < 0:
-                break
-            plan.pop(worst)
-
-        # If the cheapest remaining human task still blows the budget, swap it
-        # for the cheapest human task we know about that does fit.
-        pool = [x for key in active for x in bucket[key] if x.is_human]
-        if total() > r.budget and pool:
-            cheapest = min(pool, key=lambda x: x.cost)
-            plan = [x for x in plan if not x.is_human]
-            if sum(x.cost for x in plan) + cheapest.cost <= r.budget:
-                plan.append(cheapest)
 
     plan.sort(key=lambda x: x.phase)  # stable: preserves the order above
     return plan[:CAP]

@@ -129,7 +129,8 @@ def test_frontend_state_becomes_a_prompt_payload() -> None:
     payload = request.to_payload()
 
     assert payload["target_languages"] == ["German"]
-    assert payload["budget"] == 200
+    # budget is its own form field now, no longer part of the sample description
+    assert payload["budget"] is None
     assert payload["deadline"] is not None
     assert payload["publishing_requirements"]["target_platform"] == "Amazon KDP"
     assert payload["publishing_requirements"]["genre"] == "fantasy"

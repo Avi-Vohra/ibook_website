@@ -1,23 +1,26 @@
 """Bookit — the publishing house with zero employees.
 
-Streamlit port of the original single-page demo. Run it with:
+Streamlit port of the original single-page demo (index_1.html). Run it with:
 
     streamlit run app.py
 """
 
 from __future__ import annotations
 
+import random
 import time
+from datetime import date
 
 import streamlit as st
 
 from bookit import content, covers, planner, theme
 from bookit.theme import badge, chips, html, label, note
 
-PAGES = ["Home", "How it works", "Try it", "Human results", "The stack"]
-WIZARD_STEPS = ["Manuscript", "Plan", "Approve", "Results"]
-STEP_INDEX = {"input": 0, "thinking": 1, "plan": 2, "running": 3, "results": 3}
+PAGES = ["Home", "How it works", "Pricing", "Try it", "Human results", "The stack"]
+WIZARD_STEPS = ["Manuscript", "Plan", "Approve", "Results", "Invoice"]
+STEP_INDEX = {"input": 0, "thinking": 1, "plan": 2, "running": 3, "results": 3, "invoice": 4}
 TERAC = content.TERAC
+PRICE = content.PRICE
 
 st.set_page_config(
     page_title="Bookit — the publishing house with zero employees",
@@ -32,13 +35,25 @@ DEFAULTS = {
     "step": "input",
     "sample_file": False,
     "ctx_input": "",
+    "covers_n": 4,
+    "langs_n": 1,
     "reading": None,
     "plan": [],
     "services": set(),
     "chosen": [],
+    "order_lines": [],
+    "order_total": 0,
+    "invoice_no": None,
+    "trim_msg": None,
 }
 for key, value in DEFAULTS.items():
     st.session_state.setdefault(key, value)
+for _svc in content.SERVICES:
+    st.session_state.setdefault(f"svc_{_svc['key']}", False)
+
+
+def money(n: int) -> str:
+    return content.PAY["currency"] + f"{n:,}"
 
 
 # ── navigation ────────────────────────────────────────────────────────
@@ -55,12 +70,16 @@ def use_sample_context() -> None:
 
 
 def start_over() -> None:
-    for key in ("uploader", "ctx_input", "sample_file", "reading", "plan", "services", "chosen"):
+    for key in ("uploader", "ctx_input", "sample_file", "reading", "plan", "services",
+                "chosen", "covers_n", "langs_n", "budget_in", "order_lines", "order_total",
+                "invoice_no", "trim_msg"):
         st.session_state.pop(key, None)
     for svc in content.SERVICES:
         st.session_state.pop(f"svc_{svc['key']}", None)
     for i in range(planner.CAP):
         st.session_state.pop(f"item_{i}", None)
+    for key, value in DEFAULTS.items():
+        st.session_state.setdefault(key, value)
     st.session_state.step = "input"
     st.session_state.nav = "Try it"
 
@@ -98,25 +117,29 @@ def page_home() -> None:
          'Hackathon</div>'
          '<h1 class="serif">The publishing house<br>with zero employees.</h1>'
          '<p class="sub">Upload your manuscript. AI agents write your publishing plan, do the '
-         'work, and hire <strong>real humans</strong> for the parts that need taste. Weeks '
-         'instead of years. Hundreds instead of thousands.</p></div>')
+         'work, and hire <strong>real humans</strong> for the parts that need taste.</p>'
+         f'<p style="color:var(--ink3);font-size:14px;margin:0 0 8px">'
+         f'<b style="color:var(--amber)">{money(PRICE["publish"])}</b> to publish · '
+         f'<b style="color:var(--amber)">{money(PRICE["per_language"])}</b> per language · '
+         f'<b style="color:var(--amber)">{money(PRICE["per_cover"])}</b> per cover design. '
+         'Set a budget and Bookit keeps the plan inside it.</p></div>')
 
     left, right = st.columns(2)
     left.button("Publish my book →", type="primary", use_container_width=True,
                 on_click=go, args=("Try it",))
-    right.button(f"See what {TERAC['n']} humans decided", use_container_width=True,
-                 on_click=go, args=("Human results",))
+    right.button("The tariff", use_container_width=True, on_click=go, args=("Pricing",))
 
     st.write("")
     with st.container(border=True):
         html(label("Read this first — 30 seconds")
              + '<h2 class="sec serif" style="font-size:24px">What this is, and what\'s real</h2>'
              '<p class="lead">Bookit is an agentic publishing house. A traditional publisher '
-             'takes 18 months and 70% of your royalties. Bookit reads your manuscript, produces '
-             'a publishing plan tailored to <em>your</em> book, and executes it — but it does '
-             '<strong>not pretend to have taste</strong>. When a decision needs a human eye '
-             '(which cover sells, which blurb hooks, does this translation read naturally), it '
-             'hires real people through <strong>Terac</strong> and ships what they chose.</p>')
+             'takes 18 months and most of your royalties. Bookit reads your manuscript, '
+             'produces a publishing plan tailored to <em>your</em> book, prices it against '
+             'your budget, and executes it — but it does <strong>not pretend to have '
+             'taste</strong>. When a decision needs a human eye (which cover sells, which '
+             'blurb hooks, does this translation read naturally), it hires real people '
+             'through <strong>Terac</strong> and ships what they chose.</p>')
         real, staged = st.columns(2)
         with real:
             html(label("Real, in this app"))
@@ -144,6 +167,27 @@ def page_home() -> None:
     for col, (title, body, _) in zip(st.columns(3), content.PROBLEM_CARDS):
         with col, st.container(border=True):
             html(label(title) + f'<p class="muted" style="font-size:14.6px;margin:0">{body}</p>')
+
+
+# ── pricing ───────────────────────────────────────────────────────────
+def page_pricing() -> None:
+    section("The tariff", "Flat prices. No royalty share.",
+            "You keep your rights and 100% of your royalties. Human testing is paid for out of "
+            "these prices — when Bookit hires readers on Terac, that's already included.")
+    for row in (content.PRICING_CARDS[:2], content.PRICING_CARDS[2:]):
+        for col, (name, amount, per, bullets) in zip(st.columns(2), row):
+            with col, st.container(border=True):
+                html(f'<b style="font-size:16px">{name}</b>'
+                     f'<div class="serif" style="font-size:40px;font-weight:700;'
+                     f'letter-spacing:-.04em;margin:6px 0 0">{money(amount)}</div>'
+                     f'<p style="font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;'
+                     f'color:var(--ink3);margin:0 0 8px">{per}</p>')
+                for b in bullets:
+                    st.markdown(f"- {b}")
+    html(note('<b>Set a budget and Bookit respects it.</b> Enter what you can spend in the '
+              'order form and the total is checked live. Go over and Bookit says so — and '
+              'offers to trim the order down to fit rather than quietly dropping things.'))
+    st.button("Set my book in type →", type="primary", on_click=go, args=("Try it",))
 
 
 # ── how it works ──────────────────────────────────────────────────────
@@ -184,10 +228,50 @@ def current_file() -> dict | None:
     return None
 
 
+def selected_services() -> set[str]:
+    return {s["key"] for s in content.SERVICES if st.session_state.get(f"svc_{s['key']}")}
+
+
+def apply_trim(budget: int) -> None:
+    """Trim the order to fit the budget, and always say what changed."""
+    services = selected_services()
+    before_covers, before_langs = st.session_state.covers_n, st.session_state.langs_n
+    services, cov, lng, dropped = planner.trim_order(
+        budget, services, before_covers, before_langs)
+    st.session_state.covers_n, st.session_state.langs_n = cov, lng
+    for svc in content.SERVICES:
+        st.session_state[f"svc_{svc['key']}"] = svc["key"] in services
+
+    changed = []
+    if cov != before_covers:
+        changed.append(f"cover directions {before_covers} → {cov}")
+    if lng != before_langs:
+        changed.append(f"languages {before_langs} → {lng}")
+    if dropped:
+        changed.append(f"removed {' and '.join(dropped)}")
+
+    total = planner.price_order(services, cov, lng)[1]
+    if total > budget:
+        floor = PRICE["publish"] + PRICE["per_cover"]
+        st.session_state.trim_msg = ("over",
+            f"**Trimmed as far as it goes.** Publishing on its own is {money(floor)} — one "
+            f"cover included — so {money(budget)} can't cover a full publish. Raise your "
+            f"budget to {money(floor)}, or untick Publishing and run Marketing "
+            f"({money(PRICE['market'])}) or Translation ({money(PRICE['per_language'])}) "
+            "on its own.")
+    elif changed:
+        st.session_state.trim_msg = ("ok",
+            f"✓ Trimmed to fit {money(budget)} — now {money(total)}, "
+            f"**{money(budget - total)}** left over. Changed: {'; '.join(changed)}. "
+            "Put anything back and Bookit will flag it again.")
+    else:
+        st.session_state.trim_msg = None
+
+
 def demo_input() -> None:
     html('<h3 class="serif" style="font-size:24px;margin:0 0 4px">Let\'s get your book '
-         'published.</h3><p class="muted">Three things and Bookit can start: the manuscript, '
-         'what you want done, and who you are.</p>')
+         'published.</h3><p class="muted">Four things and Bookit can start: the manuscript, '
+         'what you want done, your budget, and who you are.</p>')
 
     st.file_uploader(
         "Drop your manuscript here",
@@ -204,15 +288,103 @@ def demo_input() -> None:
     st.write("")
     html('<label style="font-weight:650;font-size:14px">What do you need?</label>'
          '<p class="muted" style="font-size:13.5px;margin:2px 0 10px">Pick as many as you like. '
-         'The plan changes based on what you choose.</p>')
+         'The plan and the price change based on what you choose.</p>')
     for col, svc in zip(st.columns(3), content.SERVICES):
         with col, st.container(border=True):
             html(f'<div style="font-size:21px;line-height:1">{svc["icon"]}</div>'
                  f'<b style="font-size:15.5px">{svc["name"]}</b>'
-                 f'<p class="muted" style="font-size:13px;margin:4px 0 8px;line-height:1.45">'
+                 f'<div style="font-size:11.5px;font-weight:700;letter-spacing:.08em;'
+                 f'text-transform:uppercase;color:var(--amber);margin:2px 0 4px">'
+                 f'{svc["cost"]}</div>'
+                 f'<p class="muted" style="font-size:13px;margin:0 0 8px;line-height:1.45">'
                  f'{svc["blurb"]}</p>')
             st.checkbox("Include", key=f"svc_{svc['key']}")
-    services = {s["key"] for s in content.SERVICES if st.session_state.get(f"svc_{s['key']}")}
+    services = selected_services()
+
+    ctx = st.session_state.ctx_input.strip()
+    reading = planner.read_context(ctx)
+
+    # keep language count sensible against what we detected
+    if ("translate" in services and len(reading.langs) > 1
+            and st.session_state.langs_n == 1):
+        st.session_state.langs_n = min(len(reading.langs), planner.MAX_LANGS)
+
+    if "publish" in services:
+        st.write("")
+        html('<label style="font-weight:650;font-size:14px">How many cover directions?</label>'
+             f'<p class="muted" style="font-size:13.5px;margin:2px 0 8px">'
+             f'{money(PRICE["per_cover"])} each. Four gives readers a real choice to rank — '
+             "that's what makes the cover test worth running.</p>")
+        cov_col, cov_price = st.columns([0.7, 0.3])
+        cov_col.number_input("Cover directions", 1, planner.MAX_COVERS, key="covers_n",
+                             label_visibility="collapsed")
+        cov_price.markdown(
+            f'<p style="text-align:right;font-weight:700;margin:8px 0 0">'
+            f'{money(PRICE["per_cover"] * st.session_state.covers_n)}</p>',
+            unsafe_allow_html=True)
+
+    if "translate" in services:
+        st.write("")
+        detected = ("Detected in your description: " + ", ".join(reading.langs)
+                    if reading.langs
+                    else "Bookit picks up target languages from your description")
+        html('<label style="font-weight:650;font-size:14px">How many languages?</label>'
+             f'<p class="muted" style="font-size:13.5px;margin:2px 0 8px">'
+             f'{money(PRICE["per_language"])} each, including a native-speaker review. '
+             f'{detected}.</p>')
+        lg_col, lg_price = st.columns([0.7, 0.3])
+        lg_col.number_input("Languages", 1, planner.MAX_LANGS, key="langs_n",
+                            label_visibility="collapsed")
+        lg_price.markdown(
+            f'<p style="text-align:right;font-weight:700;margin:8px 0 0">'
+            f'{money(PRICE["per_language"] * st.session_state.langs_n)}</p>',
+            unsafe_allow_html=True)
+
+    st.write("")
+    budget = st.number_input(
+        "Your budget (optional)", min_value=0, step=5, value=0, key="budget_in",
+        help="Bookit checks the total against this live, and will offer to trim the order "
+             "if you go over.")
+    budget = budget or reading.budget or None  # 0 means "not set"; fall back to the description
+
+    lines, total = planner.price_order(
+        services, st.session_state.covers_n, st.session_state.langs_n, reading.langs)
+    st.session_state.order_lines, st.session_state.order_total = lines, total
+
+    # the live quote
+    with st.container(border=True):
+        if not lines:
+            html('<p class="muted" style="margin:0">Nothing selected yet.</p>')
+        for line in lines:
+            k_col, v_col = st.columns([0.75, 0.25])
+            k_col.markdown(
+                f'{line["k"]}<br><span style="font-size:12.5px;color:var(--ink3)">'
+                f'{line["d"]}</span>', unsafe_allow_html=True)
+            v_col.markdown(f'<p style="text-align:right;font-weight:700;margin:0">'
+                           f'{money(line["v"])}</p>', unsafe_allow_html=True)
+        html(f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
+             f'border-top:2px solid var(--ink);margin-top:8px;padding-top:10px">'
+             f'<span style="font-size:11.5px;font-weight:700;letter-spacing:.14em;'
+             f'text-transform:uppercase;color:var(--ink3)">Total</span>'
+             f'<span class="serif" style="font-size:34px;font-weight:700">{money(total)}</span>'
+             '</div>')
+
+        trim = st.session_state.trim_msg
+        if trim:
+            (st.success if trim[0] == "ok" else st.error)(trim[1])
+        elif not lines:
+            st.info("Pick a service to see your price.")
+        elif budget is None:
+            st.info("No budget set. Add one above and Bookit will keep the order inside it.")
+        elif total <= budget:
+            st.success(f"✓ Within your {money(budget)} budget — "
+                       f"**{money(budget - total)}** left over.")
+        else:
+            st.error(f"Over budget by **{money(total - budget)}**. Your budget is "
+                     f"{money(budget)}, this order is {money(total)}.")
+            st.button("Trim to fit", on_click=apply_trim, args=(budget,))
+    if st.session_state.trim_msg:
+        st.session_state.trim_msg = None
 
     st.write("")
     st.text_area(
@@ -222,13 +394,12 @@ def demo_input() -> None:
         placeholder="e.g. I've written a 60,000-word fantasy novel for young adults. It's my "
                     "first book and I don't know anyone in publishing. I'd love a German "
                     "edition because half my early readers are German. I want to sell it on "
-                    "Amazon and I can spend about $200.",
-        help="Genre, who it's for, what you're trying to achieve, your budget, target "
-             "languages, deadlines. Write like you're talking to a person.",
+                    "Amazon.",
+        help="Genre, who it's for, what you're trying to achieve, target languages, "
+             "deadlines. Write like you're talking to a person.",
     )
     st.button("load the sample author's description", on_click=use_sample_context)
 
-    ctx = st.session_state.ctx_input.strip()
     ready = bool(book) and bool(services)
     if not book:
         hint = "Add a manuscript and pick at least one service."
@@ -246,10 +417,10 @@ def demo_input() -> None:
                           unsafe_allow_html=True)
         if btn_col.button("Build my publishing plan →", type="primary",
                           disabled=not ready, use_container_width=True):
-            reading = planner.read_context(ctx)
             st.session_state.reading = reading
             st.session_state.services = services
-            st.session_state.plan = planner.make_plan(reading, services)
+            st.session_state.plan = planner.make_plan(
+                reading, services, st.session_state.covers_n)
             st.session_state.step = "thinking"
             st.rerun()
 
@@ -276,35 +447,35 @@ def demo_thinking() -> None:
 
 def demo_plan() -> None:
     reading = st.session_state.reading
+    services = st.session_state.services
     plan = st.session_state.plan
+    total = st.session_state.order_total
 
     facts = [("Genre", reading.genre)]
     if reading.words:
         facts.append(("Length", f"{reading.words} words"))
-    if reading.langs:
-        facts.append(("Translate to", ", ".join(reading.langs)))
+    if "translate" in services:
+        langs = ", ".join(reading.langs[:st.session_state.langs_n]) or st.session_state.langs_n
+        facts.append(("Languages", langs))
+    if "publish" in services:
+        facts.append(("Covers", st.session_state.covers_n))
     if reading.platform:
         facts.append(("Selling on", reading.platform))
-    if reading.budget:
-        facts.append(("Budget", f"${reading.budget}"))
+    facts.append(("Order total", money(total)))
     if reading.debut:
         facts.append(("Author", "first-time, no contacts"))
     if reading.deadline:
         facts.append(("Timing", "wants to move fast"))
-    if reading.audiobook:
-        facts.append(("Also", "audiobook interest"))
-    if reading.series:
-        facts.append(("Also", "part of a series"))
 
     html('<div class="readout">' + label("What the agent understood")
          + chips([f"{k}: <b>{v}</b>" for k, v in facts]) + "</div>")
 
     humans = sum(1 for item in plan if item.is_human)
-    budget_line = f" Kept under your ${reading.budget} budget." if reading.budget else ""
     html('<h3 class="serif" style="font-size:23px;margin:0 0 4px">Your publishing plan</h3>'
-         f'<p class="muted">{len(plan)} action items — <strong>{len(plan) - humans}</strong> the '
-         f'agents handle themselves, <strong>{humans}</strong> that need real people. Untick '
-         f'anything you don\'t want.{budget_line}</p>')
+         f'<p class="muted">{len(plan)} action items — <strong>{len(plan) - humans}</strong> '
+         f'the agents handle themselves, <strong>{humans}</strong> that need real people. All '
+         f'of it is covered by your {money(total)} order; unticking items doesn\'t change the '
+         'price, it changes what gets done.</p>')
 
     for i, item in enumerate(plan):
         with st.container(border=True):
@@ -315,20 +486,16 @@ def demo_plan() -> None:
             with body:
                 html(f'<div class="ai-title">{item.title} {badge(item.owner)}</div>'
                      f'<p class="ai-why">{item.why}</p>'
-                     f'<div class="meta"><span>Cost <b>{item.cost_label}</b></span>'
-                     f'<span>ETA <b>{item.eta_label}</b></span></div>')
+                     f'<div class="meta"><span>Covered by <b>{item.covered}</b></span></div>')
 
     selected = [i for i in range(len(plan)) if st.session_state.get(f"item_{i}", True)]
-    cost = sum(plan[i].cost for i in selected)
-    hours = sum(plan[i].hours for i in selected)
-    hours_label = f"{round(hours * 60)} min" if hours < 1 else f"{hours:.1f} hrs"
 
     st.write("")
     with st.container(border=True):
         total_col, back_col, run_col = st.columns([0.5, 0.2, 0.3])
         total_col.markdown(
-            f'<p class="muted" style="margin:8px 0 0"><b>{len(selected)}</b> selected · '
-            f'<b>${cost}</b> · about <b>{hours_label}</b> of work</p>',
+            f'<p class="muted" style="margin:8px 0 0"><b>{len(selected)}</b> of {len(plan)} '
+            f'items selected · order total <b>{money(total)}</b></p>',
             unsafe_allow_html=True)
         if back_col.button("← Edit", use_container_width=True):
             st.session_state.step = "input"
@@ -387,26 +554,30 @@ def demo_results() -> None:
 
     title = "The Salt Road" if reading.title == "Your Manuscript" else reading.title
     author = "A. Author"
+    n_covers = st.session_state.covers_n if "publish" in services else 4
 
     st.write("")
-    html(label("Cover directions")
-         + '<p class="muted">Four directions generated for your genre. Bookit does '
-         '<strong>not</strong> pick the winner — real readers do.</p>')
-    for col, kind in zip(st.columns(4), covers.DIRECTIONS):
-        with col:
-            classes, crown, caption = "cover", "", f"Direction {kind}"
-            if TERAC["live"] and kind == TERAC["human_pick"]["key"]:
+    html(label("Cover directions · proof sheet")
+         + '<p class="muted">Generated for your genre. Bookit does <strong>not</strong> pick '
+         'the winner — real readers do.</p>')
+    cols = st.columns(min(n_covers, 4))
+    for i in range(n_covers):
+        letter = chr(65 + i)
+        kind = covers.DIRECTIONS[i % 4]
+        with cols[i % len(cols)]:
+            classes, crown, caption = "cover", "", f"Direction {letter}"
+            if TERAC["live"] and letter == TERAC["human_pick"]["key"]:
                 classes = "cover win"
                 crown = f'<span class="wb">Chosen by {TERAC["n"]} readers</span>'
-                caption = f'Direction {kind} — {TERAC["human_pick"]["pct"]}% of readers'
-            elif TERAC["live"] and kind == TERAC["agent_pick"]["key"]:
-                caption = (f'Direction {kind} — the agent\'s pick, '
+                caption = f'Direction {letter} — {TERAC["human_pick"]["pct"]}% of readers'
+            elif TERAC["live"] and letter == TERAC["agent_pick"]["key"]:
+                caption = (f'Direction {letter} — the agent\'s pick, '
                            f'{TERAC["agent_pick"]["pct"]}%')
             html(f'<div class="{classes}">{crown}'
-                 f'<img src="{covers.cover_data_uri(kind, title, author)}" alt="Cover {kind}">'
+                 f'<img src="{covers.cover_data_uri(kind, title, author)}" alt="Cover {letter}">'
                  f'<div class="cap">{caption}</div></div>')
 
-    st.button("See the human verdict →", type="primary", on_click=go, args=("Human results",))
+    st.button("See the human verdict →", on_click=go, args=("Human results",))
 
     if "translate" in services:
         terms = content.GLOSSARY.get(reading.genre, content.GLOSSARY["general"])
@@ -441,7 +612,7 @@ def demo_results() -> None:
     if "publish" in services:
         files += ["<b>interior-print.pdf</b> (press-ready, 6×9, bleed)",
                   "<b>ebook.epub</b> (store-validated)",
-                  "<b>cover-D.png</b> (2560×1600)", "<b>metadata.json</b>"]
+                  f"<b>covers-a-to-{chr(64 + n_covers).lower()}.zip</b>", "<b>metadata.json</b>"]
     if "translate" in services:
         lang = (reading.langs[0] if reading.langs else "target").lower()
         files += [f"<b>chapter-01-{lang}.docx</b>", "<b>glossary.csv</b>"]
@@ -450,23 +621,102 @@ def demo_results() -> None:
     html('<div class="out">' + label("Files ready")
          + f'<p style="margin:0">{" · ".join(files)}</p></div>')
 
-    html(note('<b>Two human tasks are now live on Terac.</b> Bookit posted your cover test and '
-              'blurb test to a panel of real readers. When results come back, Bookit swaps in '
-              'whatever they picked and re-renders your book — no human on our side touches '
-              'it.'))
-    st.button("Start over", on_click=start_over)
+    html(note('<b>Human tasks are now live on Terac.</b> Bookit posted your cover test to a '
+              'panel of real readers. When results come back, Bookit swaps in whatever they '
+              'picked and re-renders your book — no human on our side touches it.'))
+    inv_col, again_col = st.columns(2)
+    if inv_col.button("Get my invoice →", type="primary", use_container_width=True):
+        st.session_state.step = "invoice"
+        st.rerun()
+    again_col.button("Start over", on_click=start_over, use_container_width=True)
+
+
+def demo_invoice() -> None:
+    plan = st.session_state.plan
+    lines = st.session_state.order_lines
+    total = st.session_state.order_total
+    if st.session_state.invoice_no is None:
+        st.session_state.invoice_no = f"BK-{random.randint(1000, 9999)}"
+
+    head, meta = st.columns([0.65, 0.35])
+    with head:
+        html(label("Invoice")
+             + '<h3 class="serif" style="font-size:23px;margin:0 0 4px">Bookit sent you a '
+               'bill.</h3>'
+               '<p class="muted" style="font-size:14.5px;margin:0">No one on our side wrote '
+               'this. The agent priced the work it did, added the human testing it bought on '
+               'your behalf, and issued the invoice itself.</p>')
+    with meta:
+        html(f'<p style="text-align:right;font-size:11.5px;letter-spacing:.1em;'
+             f'text-transform:uppercase;color:var(--ink3);line-height:2;margin:0">'
+             f'Docket <b style="color:var(--ink)">{st.session_state.invoice_no}</b><br>'
+             f'Dated <b style="color:var(--ink)">{date.today():%b %d, %Y}</b><br>'
+             f'Terms <b style="color:var(--ink)">Due on receipt</b></p>')
+
+    with st.container(border=True):
+        for line in lines:
+            k_col, v_col = st.columns([0.75, 0.25])
+            k_col.markdown(
+                f'**{line["k"]}**<br><span style="font-size:12.5px;color:var(--ink3)">'
+                f'{line["d"]}</span>', unsafe_allow_html=True)
+            v_col.markdown(f'<p style="text-align:right;font-weight:700;margin:0">'
+                           f'{money(line["v"])}</p>', unsafe_allow_html=True)
+        humans = sum(1 for item in plan if item.is_human)
+        if humans:
+            k_col, v_col = st.columns([0.75, 0.25])
+            k_col.markdown(
+                f'**Human testing on Terac — {humans} '
+                f'{"task" if humans == 1 else "tasks"}**<br>'
+                '<span style="font-size:12.5px;color:var(--ink3)">Paid to the people who do '
+                'the work. Already included in the prices above, shown so you can see it.'
+                '</span>', unsafe_allow_html=True)
+            v_col.markdown('<p style="text-align:right;color:var(--ink3);margin:0">included'
+                           '</p>', unsafe_allow_html=True)
+        html(f'<div style="display:flex;justify-content:space-between;align-items:flex-end;'
+             f'border-top:2px solid var(--ink);margin-top:8px;padding-top:12px">'
+             f'<span style="font-size:11.5px;font-weight:700;letter-spacing:.14em;'
+             f'text-transform:uppercase;color:var(--ink3)">Total due<br>'
+             f'<span style="font-weight:400">One-time · no subscription · no royalty share'
+             f'</span></span>'
+             f'<span class="serif" style="font-size:44px;font-weight:700">{money(total)}</span>'
+             '</div>')
+
+    pay_link = content.PAY["link"]
+    if pay_link.startswith("https://"):
+        st.link_button(f"Pay {money(total)} with Stripe →", pay_link,
+                       type="primary", use_container_width=True)
+        html('<p style="font-size:13px;color:var(--ink3);text-align:center;margin:8px 0 0">'
+             'Opens Stripe\'s hosted checkout. Bookit never sees your card details. '
+             f'Enter <strong>{money(total)}</strong> as the amount at checkout.</p>')
+    else:
+        html('<div class="pending"><p style="margin:0 0 6px"><b>Payment link not '
+             'configured.</b> This is the only setup step left.</p>'
+             '<p style="margin:0;font-size:13.5px">Open <code>bookit/content.py</code>, find '
+             'the <code>PAY</code> dict at the top, and paste your Stripe Payment Link '
+             'between the quotes. Then this becomes a working checkout button.</p></div>')
+
+    html(note('<b>What happens after you pay:</b> the human tasks on this invoice go live on '
+              'Terac immediately, your files stay available in this project, and Bookit '
+              're-renders the book once the panel\'s verdict comes back. If a panel never '
+              'reaches quota, that portion is refunded automatically.'))
+
+    back_col, again_col = st.columns(2)
+    if back_col.button("← Back to results", use_container_width=True):
+        st.session_state.step = "results"
+        st.rerun()
+    again_col.button("Start over", on_click=start_over, use_container_width=True)
 
 
 def page_demo() -> None:
     section("Try it", "Publish a book, right now.",
             "This is the live product. Use your own file or load our sample author — then "
-            "change the context and watch the plan change with it.")
+            "change the context and watch the plan and the price change with it.")
     step = st.session_state.step
     if step != "input" and not st.session_state.plan:
         step = st.session_state.step = "input"
     stepbar(step)
     {"input": demo_input, "thinking": demo_thinking, "plan": demo_plan,
-     "running": demo_running, "results": demo_results}[step]()
+     "running": demo_running, "results": demo_results, "invoice": demo_invoice}[step]()
 
 
 # ── human results ─────────────────────────────────────────────────────
@@ -545,6 +795,7 @@ def page_stack() -> None:
 PAGE_RENDERERS = {
     "Home": page_home,
     "How it works": page_how,
+    "Pricing": page_pricing,
     "Try it": page_demo,
     "Human results": page_terac,
     "The stack": page_stack,
