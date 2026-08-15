@@ -99,7 +99,7 @@ def test_wizard_runs_end_to_end() -> None:
     assert at.session_state["step"] == "invoice"
     body = " ".join(str(m.value) for m in at.markdown)
     assert "$265" in body                      # 75 + 4×10 + 100 + 50
-    assert "Payment link not configured" in body or "Pay $265 with Stripe" in body
+    assert "Stripe is not configured" in body or "Opens Stripe's hosted checkout" in body
 
 
 def test_deselecting_every_item_blocks_the_run() -> None:

@@ -1,4 +1,0 @@
-streamlit
-flask
-stripe
-python-dotenv

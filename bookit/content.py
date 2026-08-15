@@ -6,13 +6,11 @@ Everything a non-engineer might need to edit lives in this file.
 from __future__ import annotations
 
 # ══════════════════════════════════════════════════════════════════════
-# PAYMENT — paste your Stripe Payment Link between the quotes.
-#   Stripe Dashboard → Payment links → Create payment link
-#   → price "Customer chooses price" → Copy link.
-#   The payment link is PUBLIC by design and safe to put here.
-#   NEVER put a secret key (sk_) or restricted key (rk_) in this file.
+# PAYMENT — display currency symbol only. The actual Checkout Session is
+#   created dynamically in app.py from STRIPE_SECRET_KEY (see stripe_test/.env);
+#   there's nothing to paste here.
 # ══════════════════════════════════════════════════════════════════════
-PAY = {"link": "", "currency": "$"}
+PAY = {"currency": "$"}
 
 # ══════════════════════════════════════════════════════════════════════
 # PRICES — change these numbers and the whole app follows.

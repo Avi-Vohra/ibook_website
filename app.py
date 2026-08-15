@@ -1,20 +1,34 @@
 """Bookit — the publishing house with zero employees.
 
-Streamlit port of the original single-page demo (index_1.html). Run it with:
+Streamlit port of the original single-page demo (index_1.html), wired to a
+real Stripe Checkout Session for the invoice step. Run it with:
 
     streamlit run app.py
+
+Payment status is confirmed by polling the Stripe API directly (store.py
+persists the Checkout Session so the invoice page can re-check it on rerun).
 """
 
 from __future__ import annotations
 
+import os
 import random
 import time
 from datetime import date
 
+import stripe
 import streamlit as st
+from dotenv import load_dotenv
 
+import store
 from bookit import content, covers, planner, theme
 from bookit.theme import badge, chips, html, label, note
+
+load_dotenv()
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+STRIPE_CURRENCY = "usd"
+SUCCESS_URL = "https://dashboard.stripe.com/workbench/blueprints/one-time-payment/checkout-chapter?confirmation-redirect=create-checkout-session"
+CANCEL_URL = SUCCESS_URL
 
 PAGES = ["Home", "How it works", "Pricing", "Try it", "Human results", "The stack"]
 WIZARD_STEPS = ["Manuscript", "Plan", "Approve", "Results", "Invoice"]
@@ -56,6 +70,42 @@ def money(n: int) -> str:
     return content.PAY["currency"] + f"{n:,}"
 
 
+def get_or_create_checkout_session(invoice_no: str, total: int) -> dict | None:
+    """One Stripe Checkout Session per invoice, priced from the live order total."""
+    if not stripe.api_key:
+        return None
+    cached = st.session_state.get("stripe_session")
+    if cached and cached["invoice_no"] == invoice_no and cached["amount"] == total:
+        return cached
+    session = stripe.checkout.Session.create(
+        line_items=[{
+            "price_data": {
+                "currency": STRIPE_CURRENCY,
+                "unit_amount": total * 100,
+                "product_data": {"name": f"Bookit order {invoice_no}"},
+            },
+            "quantity": 1,
+        }],
+        mode="payment",
+        success_url=SUCCESS_URL,
+        cancel_url=CANCEL_URL,
+    )
+    store.save_checkout_session(session.id, invoice_no, session.url)
+    cached = {"invoice_no": invoice_no, "amount": total, "id": session.id, "url": session.url}
+    st.session_state.stripe_session = cached
+    return cached
+
+
+def sync_payment_status(session_id: str) -> dict | None:
+    if not stripe.api_key:
+        return None
+    s = stripe.checkout.Session.retrieve(session_id)
+    if s.status == "complete":
+        email = getattr(s.customer_details, "email", None)
+        store.mark_session_completed(s.id, s.payment_status, s.amount_total, s.currency, email)
+    return {"status": s.status, "payment_status": s.payment_status}
+
+
 # ── navigation ────────────────────────────────────────────────────────
 def go(page: str) -> None:
     st.session_state.nav = page
@@ -72,7 +122,7 @@ def use_sample_context() -> None:
 def start_over() -> None:
     for key in ("uploader", "ctx_input", "sample_file", "reading", "plan", "services",
                 "chosen", "covers_n", "langs_n", "budget_in", "order_lines", "order_total",
-                "invoice_no", "trim_msg"):
+                "invoice_no", "trim_msg", "stripe_session"):
         st.session_state.pop(key, None)
     for svc in content.SERVICES:
         st.session_state.pop(f"svc_{svc['key']}", None)
@@ -681,19 +731,28 @@ def demo_invoice() -> None:
              f'<span class="serif" style="font-size:44px;font-weight:700">{money(total)}</span>'
              '</div>')
 
-    pay_link = content.PAY["link"]
-    if pay_link.startswith("https://"):
-        st.link_button(f"Pay {money(total)} with Stripe →", pay_link,
+    if not stripe.api_key:
+        html('<div class="pending"><p style="margin:0 0 6px"><b>Stripe is not configured.</b> '
+             'This is the only setup step left.</p>'
+             '<p style="margin:0;font-size:13.5px">Add <code>STRIPE_SECRET_KEY</code> to '
+             '<code>stripe_test/.env</code> (from '
+             '<a href="https://dashboard.stripe.com/apikeys" target="_blank">the Stripe '
+             'dashboard</a>) and restart. Then this becomes a working checkout button.</p></div>')
+    else:
+        checkout = get_or_create_checkout_session(st.session_state.invoice_no, total)
+        st.link_button(f"Pay {money(total)} with Stripe →", checkout["url"],
                        type="primary", use_container_width=True)
         html('<p style="font-size:13px;color:var(--ink3);text-align:center;margin:8px 0 0">'
              'Opens Stripe\'s hosted checkout. Bookit never sees your card details. '
-             f'Enter <strong>{money(total)}</strong> as the amount at checkout.</p>')
-    else:
-        html('<div class="pending"><p style="margin:0 0 6px"><b>Payment link not '
-             'configured.</b> This is the only setup step left.</p>'
-             '<p style="margin:0;font-size:13.5px">Open <code>bookit/content.py</code>, find '
-             'the <code>PAY</code> dict at the top, and paste your Stripe Payment Link '
-             'between the quotes. Then this becomes a working checkout button.</p></div>')
+             f'The amount ({money(total)}) is already set on the session.</p>')
+
+        st.write("")
+        status = sync_payment_status(checkout["id"])
+        if status and status["status"] == "complete":
+            st.success(f"✓ Payment received — status: **{status['payment_status']}**.")
+        else:
+            st.info("Payment not received yet.")
+            st.button("Check payment status")
 
     html(note('<b>What happens after you pay:</b> the human tasks on this invoice go live on '
               'Terac immediately, your files stay available in this project, and Bookit '

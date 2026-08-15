@@ -7,11 +7,24 @@ client-side JavaScript into Python.
 ## Run it
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate   # skip if .venv already exists
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
 Opens on <http://localhost:8501>.
+
+### Stripe (invoice step)
+
+The invoice step creates a real Stripe Checkout Session sized to the live order
+total. Keys live in `.env` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` — get
+them from [the Stripe dashboard](https://dashboard.stripe.com/apikeys); not
+committed). Pay with test card `4242 4242 4242 4242`, any future expiry, any
+CVC — the invoice page confirms payment by polling the Stripe API directly, no
+webhook receiver required.
+
+A minimal, standalone Checkout demo (`streamlit_app.py`, a fixed $20 product) is
+included too, for sanity-checking the Stripe wiring in isolation.
 
 ## Layout
 
@@ -23,7 +36,10 @@ Opens on <http://localhost:8501>.
 | `bookit/planner.py` | The offline planning agent — regex intent reader, priced demo plan |
 | `bookit/covers.py` | The four cover directions, generated as SVG from the title |
 | `bookit/content.py` | All copy, the sample author, and the `TERAC` results block |
-| `bookit/theme.py` | The cream-and-amber palette and the HTML fragments that use it |
+| `bookit/theme.py` | The letterpress palette and the HTML fragments that use it |
+| `store.py` | Shared SQLite persistence for Stripe IDs (imported, not run directly) |
+| `streamlit_app.py` | Minimal standalone Checkout demo (fixed $20 product) |
+| `stripe_store.db` | SQLite database, created automatically on first run |
 | `tests/test_app.py` | Smoke tests: every page renders, the wizard runs end to end |
 | `tests/test_action_planner.py` | Payload building, plan validation, JSON recovery (offline) |
 | `scripts/plan_demo.py` | Generate one real plan through Pioneer and print it |

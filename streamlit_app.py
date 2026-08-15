@@ -1,7 +1,7 @@
 """Streamlit UI for accepting a one-time payment with Stripe Checkout.
 
-Run the webhook receiver separately (webhook_server.py) so
-checkout.session.completed events get recorded in the shared SQLite store.
+Payment status is confirmed by polling the Stripe API directly (see
+"Sync from Stripe" below) rather than via a webhook receiver.
 """
 
 import os
@@ -87,9 +87,8 @@ if last := st.session_state.get("last_session"):
     st.caption("Pay with test card 4242 4242 4242 4242, any future expiry, any CVC.")
 
 st.header("3 · Payment status")
-st.caption("Completed sessions are recorded by the webhook receiver "
-           "(`python webhook_server.py` + `stripe listen --forward-to localhost:4242/webhook`). "
-           "“Sync from Stripe” polls the API directly as a fallback.")
+st.caption("Click “Sync from Stripe” to poll the API and check whether any open "
+           "sessions above have been paid.")
 
 col1, col2 = st.columns(2)
 if col1.button("Refresh"):

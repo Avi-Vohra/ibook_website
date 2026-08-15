@@ -5,3 +5,5 @@ venv/
 .streamlit/secrets.toml
 .DS_Store
 .pytest_cache/
+.env
+stripe_store.db

@@ -1,4 +1,0 @@
-.env
-.venv/
-stripe_store.db
-__pycache__/
