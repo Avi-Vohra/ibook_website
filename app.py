@@ -11,7 +11,7 @@ import time
 
 import streamlit as st
 
-from bookit import content, covers, planner, theme
+from bookit import action_planner, content, covers, orchestrator as orch, planner, theme
 from bookit.theme import badge, chips, html, label, note
 
 PAGES = ["Home", "How it works", "Try it", "Human results", "The stack"]
@@ -33,9 +33,12 @@ DEFAULTS = {
     "sample_file": False,
     "ctx_input": "",
     "reading": None,
-    "plan": [],
+    "plan": None,        # ActionPlan from Pioneer
     "services": set(),
     "chosen": [],
+    "run": None,         # orchestrator Run, once "Run it" is pressed
+    "plan_error": "",
+    "live_terac": False,
 }
 for key, value in DEFAULTS.items():
     st.session_state.setdefault(key, value)
@@ -55,14 +58,65 @@ def use_sample_context() -> None:
 
 
 def start_over() -> None:
-    for key in ("uploader", "ctx_input", "sample_file", "reading", "plan", "services", "chosen"):
+    for key in ("uploader", "ctx_input", "sample_file", "reading", "plan", "services",
+                "chosen", "run", "plan_error"):
         st.session_state.pop(key, None)
     for svc in content.SERVICES:
         st.session_state.pop(f"svc_{svc['key']}", None)
     for i in range(planner.CAP):
         st.session_state.pop(f"item_{i}", None)
+    for key in [k for k in st.session_state if str(k).startswith(("act_", "answer_"))]:
+        st.session_state.pop(key, None)
     st.session_state.step = "input"
     st.session_state.nav = "Try it"
+
+
+# ── the real backend ──────────────────────────────────────────────────
+STEP_OWNER_CLASS = {"ai": "ai", "expert": "expert", "author": "author"}
+STEP_OWNER_TEXT = {"ai": "Agent", "expert": "Terac", "author": "You"}
+
+
+def get_orchestrator() -> orch.Orchestrator:
+    """One orchestrator per session. Terac is stubbed unless explicitly enabled.
+
+    The stub is the default here for the same reason it is on the CLI: a click
+    in a demo must not be able to spend money by accident.
+    """
+    if st.session_state.get("_offline_plan"):     # test seam, see tests/test_app.py
+        return _offline_orchestrator()
+    terac = None
+    if st.session_state.get("live_terac"):
+        from bookit.terac import TeracClient
+        terac = TeracClient()
+    return orch.Orchestrator(orch.RunStore(".bookit_runs"), terac=terac)
+
+
+def _offline_orchestrator() -> orch.Orchestrator:
+    """Used only by the smoke tests — no Pioneer call, no Terac call."""
+    from bookit.pioneer import Route
+
+    o = orch.Orchestrator(orch.RunStore(".bookit_runs"))
+    o._pioneer_text = lambda system, user: ("Offline test output.", Route(model="offline"))
+    return o
+
+
+def build_plan() -> None:
+    """Generate the plan through Pioneer, or record why it failed."""
+    if canned := st.session_state.get("_offline_plan"):   # test seam
+        st.session_state.plan = action_planner.parse_plan(canned)
+        st.session_state.plan_error = ""
+        return
+    request = action_planner.request_from_frontend(
+        ctx_text=st.session_state.ctx_input,
+        services=st.session_state.services,
+        book_file=current_file(),
+    )
+    try:
+        st.session_state.plan = action_planner.create_action_plan(request)
+        st.session_state.plan_error = ""
+    except Exception as exc:  # noqa: BLE001 - shown to the author, not raised
+        st.session_state.plan = None
+        st.session_state.plan_error = str(exc)
 
 
 with st.sidebar:
@@ -70,6 +124,14 @@ with st.sidebar:
          '<p class="brandsub">Upload a manuscript. Agents do the work. '
          'Humans make the taste calls.</p>')
     st.radio("Navigate", PAGES, key="nav", label_visibility="collapsed")
+    st.divider()
+    st.checkbox("Post to Terac for real", key="live_terac",
+                help="Off: opportunities are simulated and nothing is charged. On: Bookit "
+                     "asks Terac for a real price, and only launches after you approve it.")
+    if st.session_state.live_terac:
+        st.caption("Real quotes. Nothing launches without your approval.")
+    else:
+        st.caption("Terac simulated — no money can move.")
     st.divider()
     html('<p style="font-size:12.5px;color:var(--ink3);margin:0">'
          'Built at the Zero Human Company Hackathon by Terac · Humanmade, San Francisco'
@@ -189,6 +251,10 @@ def demo_input() -> None:
          'published.</h3><p class="muted">Three things and Bookit can start: the manuscript, '
          'what you want done, and who you are.</p>')
 
+    if error := st.session_state.get("plan_error"):
+        st.error(f"The planning agent could not finish: {error}")
+        st.caption("Check PIONEER_API_KEY is set, then try again.")
+
     st.file_uploader(
         "Drop your manuscript here",
         type=["pdf", "docx", "epub", "txt"],
@@ -246,10 +312,8 @@ def demo_input() -> None:
                           unsafe_allow_html=True)
         if btn_col.button("Build my publishing plan →", type="primary",
                           disabled=not ready, use_container_width=True):
-            reading = planner.read_context(ctx)
-            st.session_state.reading = reading
+            st.session_state.reading = planner.read_context(ctx)
             st.session_state.services = services
-            st.session_state.plan = planner.make_plan(reading, services)
             st.session_state.step = "thinking"
             st.rerun()
 
@@ -257,78 +321,73 @@ def demo_input() -> None:
 def demo_thinking() -> None:
     html('<h3 class="serif" style="font-size:23px;margin:0 0 2px">Reading your book.</h3>'
          '<p class="muted">The planning agent is working through your manuscript and your '
-         'description.</p>')
-    slot = st.empty()
-    for i in range(len(content.THINK) + 1):
-        rows = []
-        for j, line in enumerate(content.THINK):
-            if j < i:
-                rows.append(f'<div class="thk done"><span class="mk">✓</span>{line}</div>')
-            elif j == i:
-                rows.append(f'<div class="thk now"><span class="mk">◐</span>{line}</div>')
-            else:
-                rows.append(f'<div class="thk"><span class="mk">○</span>{line}</div>')
-        slot.markdown("".join(rows), unsafe_allow_html=True)
-        time.sleep(0.42)
-    st.session_state.step = "plan"
+         'description. This is a real model call — it takes about a minute.</p>')
+    html("".join(f'<div class="thk"><span class="mk">○</span>{line}</div>'
+                 for line in content.THINK))
+    with st.spinner("Planning…"):
+        build_plan()
+    st.session_state.step = "input" if st.session_state.plan_error else "plan"
     st.rerun()
 
 
 def demo_plan() -> None:
-    reading = st.session_state.reading
     plan = st.session_state.plan
+    summary = plan.book_summary
 
-    facts = [("Genre", reading.genre)]
-    if reading.words:
-        facts.append(("Length", f"{reading.words} words"))
-    if reading.langs:
-        facts.append(("Translate to", ", ".join(reading.langs)))
-    if reading.platform:
-        facts.append(("Selling on", reading.platform))
-    if reading.budget:
-        facts.append(("Budget", f"${reading.budget}"))
-    if reading.debut:
-        facts.append(("Author", "first-time, no contacts"))
-    if reading.deadline:
-        facts.append(("Timing", "wants to move fast"))
-    if reading.audiobook:
-        facts.append(("Also", "audiobook interest"))
-    if reading.series:
-        facts.append(("Also", "part of a series"))
-
+    facts = [("Title", summary.title), ("Genre", summary.genre),
+             ("Language", summary.current_language), ("Audience", summary.target_audience)]
     html('<div class="readout">' + label("What the agent understood")
-         + chips([f"{k}: <b>{v}</b>" for k, v in facts]) + "</div>")
+         + chips([f"{k}: <b>{v}</b>" for k, v in facts if v]) + "</div>")
 
-    humans = sum(1 for item in plan if item.is_human)
-    budget_line = f" Kept under your ${reading.budget} budget." if reading.budget else ""
+    humans = len(plan.human_actions)
+    decisions = len(plan.author_decisions)
+    tail = f" <strong>{decisions}</strong> need a decision from you." if decisions else ""
     html('<h3 class="serif" style="font-size:23px;margin:0 0 4px">Your publishing plan</h3>'
-         f'<p class="muted">{len(plan)} action items — <strong>{len(plan) - humans}</strong> the '
-         f'agents handle themselves, <strong>{humans}</strong> that need real people. Untick '
-         f'anything you don\'t want.{budget_line}</p>')
+         f'<p class="muted">{plan.plan_summary}</p>'
+         f'<p class="muted">{len(plan.actions)} action items — '
+         f'<strong>{len(plan.ai_actions)}</strong> the agents handle themselves, '
+         f'<strong>{humans}</strong> that need real people.{tail} Untick anything you '
+         'don\'t want.</p>')
 
-    for i, item in enumerate(plan):
+    for action in plan.actions:
         with st.container(border=True):
             tick, body = st.columns([0.07, 0.93])
             with tick:
-                st.checkbox("Include", key=f"item_{i}", value=True,
+                st.checkbox("Include", key=f"act_{action.id}", value=True,
                             label_visibility="collapsed")
             with body:
-                html(f'<div class="ai-title">{item.title} {badge(item.owner)}</div>'
-                     f'<p class="ai-why">{item.why}</p>'
-                     f'<div class="meta"><span>Cost <b>{item.cost_label}</b></span>'
-                     f'<span>ETA <b>{item.eta_label}</b></span></div>')
+                html(f'<div class="ai-title">{action.title} {badge(action.owner)}</div>'
+                     + (f'<p class="prod">Delivers <b>{action.product.name}</b></p>'
+                        if action.product.name else "")
+                     + (f'<p class="ai-why">{action.reason}</p>' if action.reason else ""))
+                if action.steps:
+                    with st.expander(f"How this gets done · {len(action.steps)} steps"):
+                        html("".join(
+                            f'<div class="stepline">'
+                            f'<span class="who {STEP_OWNER_CLASS.get(s.owner, "ai")}">'
+                            f'{STEP_OWNER_TEXT.get(s.owner, "Agent")}</span>'
+                            f'<span>{s.step}</span></div>'
+                            for s in action.steps))
+                        if opportunity := action.terac_opportunity:
+                            html(note(
+                                f'<b>Terac:</b> {opportunity.expert_count} × '
+                                f'{opportunity.expert_role}, {opportunity.timeline_hours}h. '
+                                f'Priced by Terac before anything is charged.'))
 
-    selected = [i for i in range(len(plan)) if st.session_state.get(f"item_{i}", True)]
-    cost = sum(plan[i].cost for i in selected)
-    hours = sum(plan[i].hours for i in selected)
-    hours_label = f"{round(hours * 60)} min" if hours < 1 else f"{hours:.1f} hrs"
+    selected = [a.id for a in plan.actions if st.session_state.get(f"act_{a.id}", True)]
+
+    if plan.warnings:
+        with st.expander(f"Planner notes ({len(plan.warnings)})"):
+            for warning in plan.warnings:
+                st.markdown(f"- {warning}")
 
     st.write("")
     with st.container(border=True):
         total_col, back_col, run_col = st.columns([0.5, 0.2, 0.3])
+        route = plan.route
+        routed = f" · planned by {route.model}" if route else ""
         total_col.markdown(
-            f'<p class="muted" style="margin:8px 0 0"><b>{len(selected)}</b> selected · '
-            f'<b>${cost}</b> · about <b>{hours_label}</b> of work</p>',
+            f'<p class="muted" style="margin:8px 0 0"><b>{len(selected)}</b> selected{routed}</p>',
             unsafe_allow_html=True)
         if back_col.button("← Edit", use_container_width=True):
             st.session_state.step = "input"
@@ -341,51 +400,119 @@ def demo_plan() -> None:
 
 
 def demo_running() -> None:
-    plan = st.session_state.plan
-    chosen = [plan[i] for i in st.session_state.chosen]
+    """Start the run. Real model calls, real Terac quotes — so it can be slow."""
+    plan = st.session_state.plan.subset(st.session_state.chosen)
     html('<h3 class="serif" style="font-size:23px;margin:0 0 4px">Bookit is publishing your '
-         'book.</h3><p class="muted">Agents run the mechanical work. Human tasks get posted to '
-         'Terac and wait for real people.</p>')
+         'book.</h3><p class="muted">Agents run the mechanical work. Anything needing a person '
+         'is priced by Terac and waits for your approval.</p>')
+    html("".join(f'<div class="run idle"><div class="st"></div>'
+                 f'<div><b>{a.title}</b><small>Queued</small></div></div>'
+                 for a in plan.actions))
 
-    slot = st.empty()
-    for done in range(len(chosen) + 1):
-        rows = []
-        for j, item in enumerate(chosen):
-            if j < done:
-                status = ("Opportunity live on Terac · panel recruiting · results feed back "
-                          "automatically") if item.is_human else "Done"
-                rows.append(f'<div class="run ok"><div class="st">✓</div>'
-                            f'<div><b>{item.title}</b><small>{status}</small></div></div>')
-            elif j == done:
-                status = ("Posting to Terac and recruiting a panel…" if item.is_human
-                          else "Running…")
-                rows.append(f'<div class="run now"><div class="st"></div>'
-                            f'<div><b>{item.title}</b><small>{status}</small></div></div>')
-            else:
-                rows.append(f'<div class="run idle"><div class="st"></div>'
-                            f'<div><b>{item.title}</b><small>Queued</small></div></div>')
-        slot.markdown("".join(rows), unsafe_allow_html=True)
-        time.sleep(0.5)
-
+    orchestrator = get_orchestrator()
+    with st.spinner("Running the plan…"):
+        run = orchestrator.start(plan)
+        run = orchestrator.tick(run, plan)
+    st.session_state.run = run
     st.session_state.step = "results"
     st.rerun()
 
 
+STATUS_TEXT = {
+    orch.DONE: ("ok", "✓", "Done"),
+    orch.FAILED: ("idle", "✗", "Failed"),
+    orch.QUOTED: ("now", "$", "Priced by Terac — needs your approval"),
+    orch.LAUNCHED: ("now", "→", "Live on Terac · panel recruiting"),
+    orch.COLLECTING: ("now", "◐", "Responses coming in"),
+    orch.AWAITING_AUTHOR: ("now", "?", "Waiting on your decision"),
+    orch.PENDING: ("idle", "·", "Queued"),
+    orch.RUNNING: ("now", "◐", "Running"),
+}
+
+
+def advance_run() -> None:
+    """Re-tick the run after the author approves or answers something."""
+    plan = st.session_state.plan.subset(st.session_state.chosen)
+    st.session_state.run = get_orchestrator().tick(st.session_state.run, plan)
+
+
 def demo_results() -> None:
     reading = st.session_state.reading
-    services = st.session_state.services
+    run: orch.Run = st.session_state.run
     plan = st.session_state.plan
-    chosen = [plan[i] for i in st.session_state.chosen]
+    orchestrator = get_orchestrator()
 
-    html('<h3 class="serif" style="font-size:23px;margin:0 0 4px">Your book is '
-         'published.</h3>')
-    for item in chosen:
-        status = ("Opportunity live on Terac · panel recruiting · results feed back "
-                  "automatically") if item.is_human else "Done"
-        html(f'<div class="run ok"><div class="st">✓</div>'
-             f'<div><b>{item.title}</b><small>{status}</small></div></div>')
+    heading = ("Your book is published." if run.is_finished
+               else "Bookit is working on your book.")
+    html(f'<h3 class="serif" style="font-size:23px;margin:0 0 4px">{heading}</h3>')
 
-    title = "The Salt Road" if reading.title == "Your Manuscript" else reading.title
+    for task in run.tasks.values():
+        css, mark, status = STATUS_TEXT.get(task.status, ("idle", "·", task.status))
+        detail = task.error if task.status == orch.FAILED else status
+        if task.status in (orch.LAUNCHED, orch.COLLECTING) and task.submissions_in:
+            detail = f"{status} · {task.submissions_in} responses in"
+        html(f'<div class="run {css}"><div class="st">{mark}</div>'
+             f'<div><b>{task.title}</b><small>{detail}</small></div></div>')
+
+    # ── the spend gate: real prices, the author decides ───────────────
+    for task in run.pending_approvals():
+        with st.container(border=True):
+            html(label("Terac needs your approval")
+                 + f'<p style="margin:0 0 2px"><b>{task.title}</b></p>'
+                 f'<p class="muted" style="margin:0">{task.quote_label}</p>')
+            yes, no = st.columns(2)
+            if yes.button(f"Approve ${task.quote_cost:.2f}", key=f"ok_{task.action_id}",
+                          type="primary", use_container_width=True):
+                # Pass the spec so an hour-old quote is re-priced, not rejected.
+                action = next((a for a in plan.actions if a.id == task.action_id), None)
+                try:
+                    orchestrator.approve(
+                        run, task.action_id,
+                        action.terac_opportunity if action else None)
+                    advance_run()
+                except Exception as exc:  # noqa: BLE001 - shown, not raised
+                    st.error(f"Terac refused the launch: {exc}")
+                st.rerun()
+            if no.button("Not this one", key=f"no_{task.action_id}",
+                         use_container_width=True):
+                orchestrator.decline(run, task.action_id)
+                advance_run()
+                st.rerun()
+
+    # ── decisions only the author can make ────────────────────────────
+    for task in run.open_questions():
+        with st.container(border=True):
+            html(label("Your call") + f'<p style="margin:0 0 6px">{task.question}</p>')
+            st.text_input("Your answer", key=f"answer_{task.action_id}",
+                          label_visibility="collapsed")
+            if st.button("Submit", key=f"sub_{task.action_id}", type="primary"):
+                answer = st.session_state.get(f"answer_{task.action_id}", "").strip()
+                if answer:
+                    orchestrator.answer(run, task.action_id, answer)
+                    advance_run()
+                    st.rerun()
+
+    if not run.is_finished:
+        left, right = st.columns([0.7, 0.3])
+        left.markdown(
+            f'<p class="muted" style="margin:8px 0 0">Spent so far <b>${run.spent_usd:.2f}</b>. '
+            'Human work takes at least 72 hours — this run is saved and you can come back '
+            'to it.</p>', unsafe_allow_html=True)
+        if right.button("Check for updates", use_container_width=True):
+            advance_run()
+            st.rerun()
+
+    # ── what the agents actually produced ─────────────────────────────
+    finished = [t for t in run.tasks.values() if t.status == orch.DONE and t.output]
+    if finished:
+        st.write("")
+        html(label("What the agents produced"))
+        for task in finished:
+            with st.expander(f"{task.title} · {task.model}"):
+                st.markdown(task.output)
+
+    title = plan.book_summary.title or (
+        "The Salt Road" if reading.title == "Your Manuscript" else reading.title)
     author = "A. Author"
 
     st.write("")
@@ -408,52 +535,28 @@ def demo_results() -> None:
 
     st.button("See the human verdict →", type="primary", on_click=go, args=("Human results",))
 
-    if "translate" in services:
-        terms = content.GLOSSARY.get(reading.genre, content.GLOSSARY["general"])
-        html('<div class="out">' + label("Translation glossary")
-             + '<p style="margin:-4px 0 10px;font-size:13.5px;color:var(--ink3)">Named entities '
-               'extracted so every chapter translates consistently.</p>'
-             + chips(terms) + "</div>")
+    delivered = [t for t in run.tasks.values() if t.status == orch.DONE]
+    if delivered:
+        html('<div class="out">' + label("Delivered")
+             + chips([t.title for t in delivered]) + "</div>")
 
-    blurb = content.SAMPLE_BLURB if reading.genre in ("fantasy", "general") else (
-        f"A {reading.genre} book that knows exactly who it's for. "
-        + (f"Written for {reading.audience}. " if reading.audience else "")
-        + "Blurb drafted from your own description, then tested with real readers before it "
-          "ships.")
-    html('<div class="out">' + label("Back-cover blurb")
-         + f'<p class="serif">{blurb}</p></div>')
+    live = [t for t in run.tasks.values()
+            if t.status in (orch.LAUNCHED, orch.COLLECTING)]
+    if live:
+        rows = "".join(
+            f'<li>{t.title} — {t.submissions_in} of the panel in'
+            + (f' · <a href="{t.dashboard_url}">dashboard</a>' if t.dashboard_url else "")
+            + "</li>"
+            for t in live)
+        html(note(f'<b>{len(live)} human task(s) live on Terac.</b> Real people are working on '
+                  f'these now. Terac\'s minimum turnaround is 72 hours, so results arrive after '
+                  f'you have closed this tab — the run is saved and picks up where it left '
+                  f'off.<ul style="margin:8px 0 0">{rows}</ul>'))
 
-    if "market" in services:
-        platform = reading.platform or "Amazon KDP"
-        html('<div class="out">' + label("Launch assets")
-             + f'<p style="margin:0 0 9px"><strong>{platform} keywords:</strong> '
-               f'{reading.genre} debut, slow-burn {reading.genre}, lyrical fantasy, portal '
-               'fantasy standalone, books like Piranesi, YA crossover fantasy, literary '
-               'fantasy</p>'
-               '<p style="margin:0 0 9px"><strong>Categories:</strong> Fantasy → Myths &amp; '
-               'Legends · Coming of Age Fantasy <span style="color:var(--ink3)">(picked for '
-               'rank-to-competition ratio, not volume)</span></p>'
-               '<p style="margin:0"><strong>Launch run:</strong> 5 posts over 9 days, three ad '
-               'angles written from what test readers actually said, plus a 12-week '
-               'calendar.</p></div>')
-
-    files = []
-    if "publish" in services:
-        files += ["<b>interior-print.pdf</b> (press-ready, 6×9, bleed)",
-                  "<b>ebook.epub</b> (store-validated)",
-                  "<b>cover-D.png</b> (2560×1600)", "<b>metadata.json</b>"]
-    if "translate" in services:
-        lang = (reading.langs[0] if reading.langs else "target").lower()
-        files += [f"<b>chapter-01-{lang}.docx</b>", "<b>glossary.csv</b>"]
-    if "market" in services:
-        files += ["<b>launch-plan.md</b>", "<b>keywords.csv</b>"]
-    html('<div class="out">' + label("Files ready")
-         + f'<p style="margin:0">{" · ".join(files)}</p></div>')
-
-    html(note('<b>Two human tasks are now live on Terac.</b> Bookit posted your cover test and '
-              'blurb test to a panel of real readers. When results come back, Bookit swaps in '
-              'whatever they picked and re-renders your book — no human on our side touches '
-              'it.'))
+    if not st.session_state.live_terac:
+        html(note('<b>Terac is simulated in this run.</b> Prices and responses are placeholders '
+                  'and nothing was charged. Turn on <em>Post to Terac for real</em> in the '
+                  'sidebar to get genuine quotes.'))
     st.button("Start over", on_click=start_over)
 
 
@@ -462,8 +565,10 @@ def page_demo() -> None:
             "This is the live product. Use your own file or load our sample author — then "
             "change the context and watch the plan change with it.")
     step = st.session_state.step
-    if step != "input" and not st.session_state.plan:
+    if step not in ("input", "thinking") and st.session_state.plan is None:
         step = st.session_state.step = "input"
+    if step == "results" and st.session_state.run is None:
+        step = st.session_state.step = "plan"
     stepbar(step)
     {"input": demo_input, "thinking": demo_thinking, "plan": demo_plan,
      "running": demo_running, "results": demo_results}[step]()

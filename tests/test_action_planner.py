@@ -43,12 +43,15 @@ VALID_PLAN = {
             "priority": "critical",
             "depends_on": [],
             "inputs": ["manuscript"],
-            "artifact": {
-                "name": "glossary-en-de.csv",
-                "format": "CSV",
+            "product": {
+                "name": "EN-DE terminology glossary",
+                "format": "glossary",
                 "description": "Named entities with one locked German rendering each",
             },
-            "deliverables": ["glossary-en-de.csv"],
+            "steps": [
+                {"step": "Extract every character, place and invented term", "owner": "ai"},
+                {"step": "Lock one German rendering for each", "owner": "ai"},
+            ],
             "acceptance_criteria": ["Every named entity has one German rendering"],
             "estimated_scope": "30 minutes",
             "terac_opportunity": None,
@@ -62,16 +65,22 @@ VALID_PLAN = {
             "priority": "critical",
             "depends_on": ["A2"],
             "inputs": ["German manuscript", "English source"],
-            "artifact": {
-                "name": "the-salt-road-de-edited.docx",
-                "format": "DOCX",
-                "description": "Native-edited German manuscript",
+            "product": {
+                "name": "Natively reviewed German manuscript",
+                "format": "manuscript",
+                "description": "German text revised by a native literary editor",
             },
-            "deliverables": ["the-salt-road-de-edited.docx"],
+            "steps": [
+                {"step": "A native German editor reads against the source", "owner": "expert"},
+                {"step": "Corrections are applied to the manuscript", "owner": "ai"},
+            ],
             "acceptance_criteria": ["No glossary violations"],
             "estimated_scope": "8 hours",
             "terac_opportunity": {
                 "expert_role": "Native German literary editor",
+                "panel_description": "Native German speakers who edit literary fiction",
+                "expert_count": 1,
+                "timeline_hours": 120,
                 "opportunity_title": "Review AI-translated German fantasy manuscript",
                 "opportunity_description": "Review 62,000 words against the English source.",
                 "required_skills": ["literary editing", "fantasy genre"],
@@ -92,12 +101,15 @@ VALID_PLAN = {
             "priority": "critical",
             "depends_on": ["A1"],
             "inputs": ["manuscript", "glossary-en-de.csv"],
-            "artifact": {
-                "name": "the-salt-road-de.docx",
-                "format": "DOCX",
+            "product": {
+                "name": "German translation of the manuscript",
+                "format": "manuscript",
                 "description": "Glossary-locked German translation",
             },
-            "deliverables": ["the-salt-road-de.docx"],
+            "steps": [
+                {"step": "Translate the full manuscript against the glossary", "owner": "ai"},
+                {"step": "Check names stayed consistent throughout", "owner": "ai"},
+            ],
             "acceptance_criteria": ["All chapters translated"],
             "estimated_scope": "2 hours",
             "terac_opportunity": None,
@@ -206,9 +218,11 @@ def test_bad_fields_are_repaired_and_reported() -> None:
                 "execution_type": "MAGIC",          # unknown → falls back to AI
                 "priority": "urgent",               # unknown → falls back
                 "depends_on": ["A1", "A99"],        # self + nonexistent
-                "deliverables": [],                 # missing deliverable
+                "product": {"name": "Something"},
+                "steps": [{"step": "a", "owner": "ai"}, {"step": "b", "owner": "ai"}],
             },
-            {"id": "A1", "title": "Duplicate id", "deliverables": ["x"]},
+            {"id": "A1", "title": "Duplicate id", "product": {"name": "Other"},
+             "steps": [{"step": "a", "owner": "ai"}, {"step": "b", "owner": "ai"}]},
         ]
     }
     plan = ap.parse_plan(payload)
@@ -218,109 +232,158 @@ def test_bad_fields_are_repaired_and_reported() -> None:
     assert first.depends_on == []
     assert len({a.id for a in plan.actions}) == 2, "duplicate ids must be made unique"
     joined = " ".join(plan.warnings)
-    assert "A99" in joined and "self-dependency" in joined and "no deliverable" in joined
+    assert "A99" in joined and "self-dependency" in joined
 
 
-# ── atomicity: one action, one product ────────────────────────────────
-def test_bundled_titles_are_detected() -> None:
-    bundled = [
-        "Format English ebook (EPUB) and paperback (print PDF)",
-        "Generate German metadata and book description",
-        "Parse manuscript and run structural QA",
-        "Publish English edition (ebook + paperback) to KDP",
-        "Translate, edit, and format the German edition",
-        "Produce cover JPG & paperback wrap PDF",
-        "Build glossary then translate manuscript",
-        "Create EPUB/PDF bundle",
-    ]
-    for title in bundled:
-        assert ap.bundled_title(title), f"should have been flagged: {title}"
-
-    atomic = [
-        "Extract clean manuscript text",
-        "Build EN-DE terminology glossary",
-        "Produce German reflowable EPUB",
-        "Write German book description",
-        "Report manuscript structural issues",
-        "Assemble German KDP keyword set",
-    ]
-    for title in atomic:
-        assert not ap.bundled_title(title), f"false positive: {title}"
-
-
-def test_author_decisions_may_batch_questions_onto_one_record() -> None:
-    # Four questions on one decision sheet is one artifact — and four separate
-    # interruptions of the author would be worse, not more atomic.
+# ── author-facing shape: coarse actions with a step preview ───────────
+def test_a_well_shaped_action_produces_no_warnings() -> None:
     payload = {
         "actions": [{
             "id": "A1",
-            "title": "Confirm pricing, pen name and German tone decisions",
-            "execution_type": "AUTHOR_DECISION",
-            "artifact": {"name": "author-decisions.md", "format": "decision record"},
-            "deliverables": ["author-decisions.md with all four answers"],
-        }]
-    }
-    plan = ap.parse_plan(payload)
-    assert not plan.warnings, plan.warnings
-    assert plan.actions[0].is_atomic
-    # the same title on a production action is still flagged
-    payload["actions"][0]["execution_type"] = "AI_AUTOMATED"
-    assert any("bundles" in w for w in ap.parse_plan(payload).warnings)
-
-
-def test_non_atomic_actions_are_flagged_with_the_offending_join() -> None:
-    payload = {
-        "actions": [{
-            "id": "A1",
-            "title": "Format English ebook (EPUB) and paperback (print PDF)",
-            "artifact": {"name": "files", "format": "mixed"},
-            "deliverables": ["EPUB file", "Print interior PDF", "Page count"],
-        }]
-    }
-    plan = ap.parse_plan(payload)
-    joined = " ".join(plan.warnings)
-    assert "bundles more than one artifact" in joined
-    assert "3 deliverables" in joined
-    assert "is a category, not a file" in joined
-    assert plan.non_atomic_actions == plan.actions
-    assert not plan.actions[0].is_atomic
-
-
-def test_an_atomic_action_produces_no_warnings() -> None:
-    payload = {
-        "actions": [{
-            "id": "A1",
-            "title": "Build EN-DE terminology glossary",
-            "execution_type": "AI_AUTOMATED",
+            "title": "Translate the book into German",
+            "execution_type": "AI_WITH_EXPERT_REVIEW",
             "priority": "critical",
-            "artifact": {
-                "name": "glossary-en-de.csv",
-                "format": "CSV",
-                "description": "Every proper noun with its locked German rendering",
+            "product": {"name": "German edition of the manuscript", "format": "manuscript"},
+            "steps": [
+                {"step": "Lock character names into a glossary", "owner": "ai"},
+                {"step": "Translate the full manuscript", "owner": "ai"},
+                {"step": "A native German editor revises the draft", "owner": "expert"},
+            ],
+            "terac_opportunity": {
+                "expert_role": "Native German literary editor",
+                "panel_description": "Native German literary editors",
+                "expert_count": 1, "timeline_hours": 120,
             },
-            "deliverables": ["glossary-en-de.csv with one German rendering per term"],
+        }, {
+            "id": "A2", "title": "Publish the German edition on Amazon KDP",
+            "product": {"name": "Live German listing", "format": "KDP listing"},
+            "steps": [{"step": "Build the files", "owner": "ai"},
+                      {"step": "Upload to KDP", "owner": "ai"}],
+        }, {
+            "id": "A3", "title": "Design the cover",
+            "product": {"name": "Final cover", "format": "cover artwork"},
+            "steps": [{"step": "Generate four directions", "owner": "ai"},
+                      {"step": "Readers pick the winner", "owner": "expert"}],
         }]
     }
     plan = ap.parse_plan(payload)
     assert not plan.warnings, plan.warnings
-    assert plan.actions[0].is_atomic
-    assert plan.artifacts[0].name == "glossary-en-de.csv"
-    assert not plan.non_atomic_actions
+    assert not plan.malformed_actions
+    assert plan.products[0].name == "German edition of the manuscript"
+    assert [s.owner for s in plan.actions[0].steps] == ["ai", "ai", "expert"]
+    assert len(plan.actions[0].expert_steps) == 1
 
 
-def test_artifact_collapsed_to_a_bare_string_still_parses() -> None:
-    payload = {"actions": [{"id": "A1", "title": "Produce German EPUB",
-                            "artifact": "the-salt-road-de.epub",
-                            "deliverables": ["the German EPUB"]}]}
+def test_a_plan_with_no_humans_is_flagged() -> None:
+    # Observed live with a cheap model: "4 actions · 0 involve real people".
+    # Mechanically fine, but it deletes the product's central claim.
+    payload = {"actions": [
+        {"id": f"A{i}", "title": f"Do thing {i}",
+         "execution_type": "AI_AUTOMATED",
+         "product": {"name": f"Product {i}"},
+         "steps": [{"step": "a", "owner": "ai"}, {"step": "b", "owner": "ai"}]}
+        for i in range(1, 5)
+    ]}
     plan = ap.parse_plan(payload)
-    assert plan.actions[0].artifact.name == "the-salt-road-de.epub"
-    assert plan.actions[0].is_atomic
+    assert any("does not do" in w for w in plan.warnings)
+    assert not plan.human_actions
 
 
-def test_missing_artifact_is_reported() -> None:
-    payload = {"actions": [{"id": "A1", "title": "Do a thing", "deliverables": ["something"]}]}
+def test_an_engineering_backlog_is_flagged() -> None:
+    # The failure mode the coarse rewrite exists to prevent: 23 micro-actions.
+    payload = {"actions": [
+        {"id": f"A{i}", "title": f"Step {i}",
+         "product": {"name": f"Thing {i}"},
+         "steps": [{"step": "do it", "owner": "ai"}, {"step": "check it", "owner": "ai"}]}
+        for i in range(1, 13)
+    ]}
     plan = ap.parse_plan(payload)
-    assert any("no artifact named" in w for w in plan.warnings)
+    assert any("engineering backlog" in w for w in plan.warnings)
+
+
+def test_too_many_steps_is_flagged_as_too_detailed() -> None:
+    payload = {"actions": [{
+        "id": "A1", "title": "Translate the book into German",
+        "product": {"name": "German edition"},
+        "steps": [{"step": f"micro step {i}", "owner": "ai"} for i in range(9)],
+    }]}
+    plan = ap.parse_plan(payload)
+    assert any("too detailed" in w for w in plan.warnings)
+    assert plan.malformed_actions == plan.actions
+
+
+def test_missing_product_and_steps_are_reported() -> None:
+    plan = ap.parse_plan({"actions": [{"id": "A1", "title": "Do a thing"}]})
+    joined = " ".join(plan.warnings)
+    assert "no product named" in joined
+    assert "no steps" in joined
+
+
+def test_category_product_names_are_rejected() -> None:
+    plan = ap.parse_plan({"actions": [{
+        "id": "A1", "title": "Make things", "product": {"name": "files"},
+        "steps": [{"step": "a", "owner": "ai"}, {"step": "b", "owner": "ai"}],
+    }]})
+    assert any("category, not a deliverable" in w for w in plan.warnings)
+
+
+def test_product_collapsed_to_a_bare_string_still_parses() -> None:
+    plan = ap.parse_plan({"actions": [{
+        "id": "A1", "title": "Translate the book",
+        "product": "German edition of the manuscript",
+        "steps": ["Translate it", "Have it reviewed"],
+    }]})
+    action = plan.actions[0]
+    assert action.product.name == "German edition of the manuscript"
+    assert [s.step for s in action.steps] == ["Translate it", "Have it reviewed"]
+    assert action.steps[0].owner == "ai", "owner defaults to ai when unstated"
+
+
+def test_terac_counts_and_timelines_are_clamped_to_what_terac_accepts() -> None:
+    # Terac rejects timelineHours outside 72..720 and counts outside 1..999,
+    # so a plan promising "24 hours" must never reach the API.
+    opportunity = ap.TeracOpportunity.from_json({
+        "expert_role": "editor", "expert_count": 5000, "timeline_hours": 24,
+    })
+    assert opportunity.expert_count == ap.MAX_EXPERTS
+    assert opportunity.timeline_hours == ap.MIN_TIMELINE_HOURS
+
+    loose = ap.TeracOpportunity.from_json({"expert_count": "40", "timeline_hours": 120.0})
+    assert loose.expert_count == 40 and loose.timeline_hours == 120
+
+    missing = ap.TeracOpportunity.from_json({})
+    assert missing.expert_count == 1 and missing.timeline_hours == ap.MIN_TIMELINE_HOURS
+
+
+def test_opportunity_briefs_are_complete_enough_to_post() -> None:
+    opportunity = ap.TeracOpportunity.from_json({
+        "expert_role": "Native German literary editor",
+        "opportunity_description": "Review the translated manuscript.",
+        "inputs_provided": ["German manuscript", "English source"],
+        "expected_deliverables": ["Revised manuscript"],
+        "acceptance_criteria": ["Tone preserved"],
+        "language_requirements": ["German (native)"],
+    })
+    task = opportunity.task_brief()
+    assert "Review the translated manuscript." in task
+    assert "You will receive: German manuscript, English source." in task
+    assert "Deliver: Revised manuscript." in task
+    assert "Accepted when: Tone preserved." in task
+    # no panel_description given, so it is synthesised from role + languages
+    assert "Native German literary editor" in opportunity.panel_brief()
+    assert "German (native)" in opportunity.panel_brief()
+
+
+def test_a_panel_sized_review_step_is_flagged_as_costly() -> None:
+    plan = ap.parse_plan({"actions": [{
+        "id": "A1", "title": "Review the translation",
+        "execution_type": "AI_WITH_EXPERT_REVIEW",
+        "product": {"name": "Reviewed manuscript"},
+        "steps": [{"step": "a", "owner": "expert"}, {"step": "b", "owner": "ai"}],
+        "terac_opportunity": {"expert_role": "editor", "panel_description": "editors",
+                              "expert_count": 40, "timeline_hours": 120},
+    }]})
+    assert any("multiplies cost" in w for w in plan.warnings)
 
 
 def test_human_action_without_an_opportunity_is_flagged() -> None:
@@ -335,11 +398,14 @@ def test_human_action_without_an_opportunity_is_flagged() -> None:
 
 
 def test_scalar_where_a_list_belongs_is_accepted() -> None:
-    payload = {"actions": [{"id": "A1", "title": "t", "deliverables": "one file",
-                            "depends_on": [], "inputs": "manuscript"}]}
+    payload = {"actions": [{"id": "A1", "title": "t", "product": {"name": "A thing"},
+                            "steps": [{"step": "a", "owner": "ai"},
+                                      {"step": "b", "owner": "ai"}],
+                            "depends_on": [], "inputs": "manuscript",
+                            "acceptance_criteria": "it works"}]}
     plan = ap.parse_plan(payload)
-    assert plan.actions[0].deliverables == ["one file"]
     assert plan.actions[0].inputs == ["manuscript"]
+    assert plan.actions[0].acceptance_criteria == ["it works"]
 
 
 def test_empty_plan_is_an_error() -> None:

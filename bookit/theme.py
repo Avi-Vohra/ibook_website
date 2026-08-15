@@ -53,6 +53,15 @@ p.lead{font-size:18px;color:var(--ink);line-height:1.6}
 .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
 .badge.ag{background:rgba(179,89,26,.15);color:var(--amber)}
 .badge.hu{background:rgba(29,107,87,.16);color:var(--green)}
+.badge.au{background:rgba(120,90,30,.16);color:#7a5a1e}
+.stepline{display:flex;gap:9px;align-items:baseline;padding:3px 0;font-size:14px}
+.stepline .who{font-size:10px;font-weight:800;letter-spacing:.06em;min-width:52px;
+  text-transform:uppercase;opacity:.75}
+.stepline .who.ai{color:var(--amber)}
+.stepline .who.expert{color:var(--green)}
+.stepline .who.author{color:#7a5a1e}
+.prod{font-size:13.5px;color:var(--ink3);margin:2px 0 0}
+.prod b{color:var(--ink)}
 .chips{display:flex;gap:7px;flex-wrap:wrap}
 .chip{font-size:12.5px;padding:4px 10px;border-radius:20px;background:var(--panel);
   border:1px solid var(--line);color:var(--ink2)}
@@ -172,6 +181,8 @@ def label(text: str) -> str:
 def badge(owner: str) -> str:
     if owner == "human":
         return '<span class="badge hu"><span class="dot"></span>Human via Terac</span>'
+    if owner == "author":
+        return '<span class="badge au"><span class="dot"></span>Needs your decision</span>'
     return '<span class="badge ag"><span class="dot"></span>Agent</span>'
 
 

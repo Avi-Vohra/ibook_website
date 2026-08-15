@@ -1,33 +1,171 @@
 # Bookit — Streamlit edition
 
-The publishing house with zero employees. This is the [original single-file
-demo](index.html) rebuilt as a Streamlit app, with the planning logic moved out of
-client-side JavaScript into Python.
+The publishing house with zero employees. An author uploads a manuscript and says what
+they want. An agent writes a publishing plan for *that* book, does the mechanical work
+itself, and hires real people through Terac for the parts that need human judgement.
+
+## What exists today
+
+The UI is wired to the real pipeline. Plan → execute → wait for humans → resume, driven by
+Pioneer for model work and Terac for human work, with durable state and a spend gate.
+
+```
+author input ──▶ action_planner ──▶ ActionPlan ──▶ orchestrator ──┬─▶ Pioneer  (AI work)
+                 (Pioneer)          3–7 actions   (durable run)   ├─▶ Terac    (human work)
+                                                                   └─▶ author  (decisions)
+```
+
+Pressing **Build my publishing plan** makes a real Pioneer call (~1 min). Each action shows
+its product and a collapsible step list. **Run it** starts a real run: agents do their work,
+human tasks get a real Terac quote, and the run stops and asks before anything is charged.
+
+Terac is **simulated by default**. The sidebar toggle *Post to Terac for real* switches to
+live quotes; even then nothing launches until you press Approve.
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
+
+# the app
 streamlit run app.py
+
+# the real pipeline, cheap models, no money can move
+BOOKIT_BUDGET=1 python scripts/run_pipeline.py --auto-approve 50
+
+# walk it all the way to the end (expert responses are SIMULATED)
+BOOKIT_BUDGET=1 python scripts/run_pipeline.py --auto-approve 50 --simulate-experts
+
+# resume later — human work outlives the process
+python scripts/run_pipeline.py --resume run-1786835884
+python scripts/run_pipeline.py --resume run-… --approve A3
+python scripts/run_pipeline.py --resume run-… --answer A1 "Use informal du."
 ```
 
-Opens on <http://localhost:8501>.
+`--simulate-experts` exists because Terac's real minimum is 72 hours: without it a launched
+task never completes and the run has no reachable end state while you're developing. The
+responses it returns are labelled `SIMULATED` in the data itself — never show them as real
+panel results.
+
+Keys live in `.streamlit/secrets.toml` (`TERAC_API_KEY`) and the environment
+(`PIONEER_API_KEY`). Both are gitignored.
 
 ## Layout
 
 | File | What's in it |
 | --- | --- |
-| `app.py` | Every page and the four-step demo wizard |
-| `bookit/action_planner.py` | **Action Item creation** — folds the frontend inputs into the planner prompt, calls Pioneer, validates the plan |
-| `bookit/pioneer.py` | The Pioneer client: model routing, JSON recovery, route/savings telemetry |
-| `bookit/planner.py` | The offline planning agent — regex intent reader, priced demo plan |
+| **Backend pipeline** | |
+| `bookit/action_planner.py` | **Action Item creation** — folds frontend input into the planner prompt, calls Pioneer, validates the plan |
+| `bookit/orchestrator.py` | **The execution agent** — durable state machine, spend gate, resume |
+| `bookit/terac.py` | Terac REST client (quote → launch → poll) plus an offline stub |
+| `bookit/pioneer.py` | Pioneer client: routing, JSON recovery, tool calls, savings telemetry |
+| **Frontend** | |
+| `app.py` | Every page and the wizard, wired to the pipeline |
+| `bookit/planner.py` | The old regex intent reader; still used for the sample-author readout |
 | `bookit/covers.py` | The four cover directions, generated as SVG from the title |
 | `bookit/content.py` | All copy, the sample author, and the `TERAC` results block |
 | `bookit/theme.py` | The cream-and-amber palette and the HTML fragments that use it |
-| `tests/test_app.py` | Smoke tests: every page renders, the wizard runs end to end |
-| `tests/test_action_planner.py` | Payload building, plan validation, JSON recovery (offline) |
-| `scripts/plan_demo.py` | Generate one real plan through Pioneer and print it |
+| **Scripts and tests** | |
+| `scripts/run_pipeline.py` | Plan → execute → report, end to end |
+| `scripts/plan_demo.py` | Generate one plan and print it |
+| `tests/test_action_planner.py` | Payload building, plan shape, JSON recovery (offline) |
+| `tests/test_orchestrator.py` | State machine, spend gate, durability (offline) |
+| `tests/test_app.py` | Smoke tests: every page renders, the wizard runs |
 | `index.html` | The original page, kept for reference |
+
+## The execution agent
+
+Terac's minimum turnaround is **72 hours**, so nothing here can run to completion inside a
+request. The orchestrator is therefore not a loop — it is durable state plus a `tick()`
+that advances whatever is ready and returns:
+
+```python
+from bookit.orchestrator import Orchestrator, RunStore
+
+orch = Orchestrator(RunStore())        # Terac stubbed unless you pass a real client
+run = orch.start(plan)
+run = orch.tick(run, plan)             # safe to call repeatedly, never blocks
+
+run.pending_approvals()                # Terac quotes waiting on the author
+run.open_questions()                   # AUTHOR_DECISION tasks
+orch.approve(run, "A3")                # the only call that spends money
+orch.answer(run, "A1", "Use informal du.")
+```
+
+Per action:
+
+```
+AI_AUTOMATED     PENDING → RUNNING → DONE
+TERAC_EXPERT     PENDING → QUOTED → (author approves) → LAUNCHED → COLLECTING → DONE
+AUTHOR_DECISION  PENDING → AWAITING_AUTHOR → DONE
+```
+
+**The gap between QUOTED and LAUNCHED is the whole point.** Terac prices a job for free and
+charges on launch, so the author's approval sits exactly there. `Orchestrator` defaults to
+`StubTeracClient`, so a dev loop cannot spend money by accident — you have to pass a real
+`TeracClient` deliberately.
+
+Runs are one JSON file each under `.bookit_runs/`, written with write-then-rename so a
+crash mid-write leaves the previous state intact. A run survives a restart, which it has
+to: human work outlives the process that started it.
+
+## Terac
+
+[Terac](https://terac.com) operates a verified expert panel and sells on-demand access.
+Bookit uses it for every judgement an agent cannot make: which cover a reader picks up,
+whether a translated sentence sounds native, whether a blurb lands.
+
+`bookit/terac.py` wraps the REST API at `https://terac.com/api/external/v2`
+(`Authorization: Bearer …`, key in `.streamlit/secrets.toml`):
+
+```
+POST /quotes                 taskDescription, panelDescription,     → quoteId, totalCost,
+                             submissionCount 1–999,                   costPerParticipant
+                             timelineHours 72–720
+POST /quotes/{id}/launch     name, projectId                        → opportunityId   ← charges
+GET  /opportunities/{id}     draft|active|fulfilled|paused|stopped|completed
+GET  /opportunities/{id}/submissions
+```
+
+Three constraints that shaped the design, all found by probing the live API rather than
+reading marketing copy:
+
+- **72-hour minimum.** `timelineHours` will not accept less, so human results cannot land
+  inside a demo. The planner is clamped to the same bounds so it never promises the author
+  a faster turnaround than Terac can deliver.
+- **Pricing is a round trip.** You describe the task; Terac prices it. The old UI's `$58`
+  and `$42` are invented numbers — real cost only exists after a quote.
+- **Quote is free, launch charges.** Which is exactly where the author's approval sits.
+
+There is also an [Agent MCP](https://terac.com/mcp) at `https://terac.com/api/mcp`
+(`terac_request_feasibility` → `terac_launch_draft_opportunity` → `terac_get_submissions`).
+It authenticates via OAuth on first connect, which is awkward from a server process, so the
+app uses REST. Add it to Claude Code for manual exploration:
+
+```bash
+claude mcp add --transport http terac https://terac.com/api/mcp
+```
+
+## Cheap models while testing
+
+`BOOKIT_BUDGET=1` pins `gpt-5-nano` instead of letting the router choose. Measured on the
+same plan:
+
+| Model | Plan cost | Notes |
+| --- | --- | --- |
+| `claude-opus-4-7` (router's pick) | $0.228 | what `pioneer/auto` selects for planning |
+| `gpt-5-nano` (`BOOKIT_BUDGET=1`) | $0.0034 | ~67× cheaper, correct plan shape |
+
+`PIONEER_MODEL=<id>` overrides both. If a pinned model returns 5xx the client falls back to
+`pioneer/auto` once and records it on `client.fell_back_from` — `deepseek-ai/DeepSeek-V4-Flash`
+was the original budget pick and started 500-ing on every request, including two-word
+prompts, which is what the fallback exists for.
+
+**Budget mode is for plumbing, not for the demo.** `gpt-5-nano` follows the plan rules loosely
+and varies run to run: it has split one product across two actions, and once produced a plan
+with *no human tasks at all* — which deletes Bookit's central claim. `parse_plan()` now warns
+on that, but the fix is to plan with a better model. Use `pioneer/auto` (or pin
+`claude-sonnet-5`) for anything you show a judge.
 
 ## Action Item creation
 
@@ -47,35 +185,38 @@ request = request_from_frontend(
 )
 plan = create_action_plan(request)
 
-plan.actions             # ordered, dependency-respecting
-plan.artifacts           # every product the plan creates, in build order
+plan.actions             # 3-7 author-facing actions, dependency-ordered
+plan.products            # what the author receives, in delivery order
 plan.human_actions       # the ones Terac gets
 plan.opportunities       # ready-to-post job specs
-plan.non_atomic_actions  # actions still bundling more than one product
+plan.malformed_actions   # actions without a clear product or step preview
 plan.route               # which model served this, and what routing saved
 plan.warnings            # anything repaired or flagged during validation
 ```
 
-### One action, one product
+### Author-facing actions, with the detail collapsed underneath
 
-Every action produces exactly **one** named artifact — something that did not exist before it ran
-and can be opened or shipped on its own:
+An action is what the **author** reads and approves — one outcome they would recognise and pay
+for. "Translate the book into German" is one action. Building a glossary, translating a sample
+chapter, running QA, and having a native speaker revise it are *steps inside it*, not actions:
 
 ```python
-action.artifact.name     # "glossary-en-de.csv"
-action.artifact.format   # "CSV"
-action.is_atomic         # False if it bundles more than one product
+action.title             # "Translate the book into German"
+action.product.name      # "German edition of the manuscript"
+action.steps             # 2-6 short lines for the collapsed detail view
+action.steps[0].owner    # "ai" | "expert" | "author"
+action.expert_steps      # the steps a real person does
 ```
 
-Without this rule the model happily emits *"Format English ebook (EPUB) and paperback (print
-PDF)"* — two files, one action, and nothing downstream can execute it as a unit. The prompt now
-forbids joined titles and requires a filename-shaped `artifact.name`, and `parse_plan()` checks
-it: a title containing `and` / `&` / `+` / `/`, more than one `deliverables` entry, or an artifact
-named `"files"` all raise a warning naming the offending action.
+This matters because the first version got it backwards. Pushed toward maximum granularity, the
+planner produced a **23-action, 12,387-token engineering backlog** — including author-facing items
+like *"Translate a sample chapter into German"*, which is a risk-management tactic, not something
+an author should have to approve. The coarse rewrite brings it to 5 actions with the tactics
+pushed down into `steps`, where the orchestrator decides the real sequence at execution time.
 
-`AUTHOR_DECISION` is exempt from the title check on purpose — several questions answered on one
-decision record is still one artifact, and splitting them would mean interrupting the author four
-separate times.
+`parse_plan()` enforces the shape: more than 7 actions warns about an engineering backlog, more
+than 6 steps warns that the author view is too detailed, and a product named `"files"` is rejected
+as a category rather than a deliverable.
 
 Set the key first — environment or `.streamlit/secrets.toml`:
 

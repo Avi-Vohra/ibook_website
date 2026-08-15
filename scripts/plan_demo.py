@@ -69,25 +69,27 @@ def main() -> int:
     print(f"{len(plan.actions)} actions: {len(plan.ai_actions)} AI, "
           f"{len(plan.human_actions)} human, {len(plan.author_decisions)} author\n")
 
+    step_tag = {"ai": "AI", "expert": "TERAC", "author": "YOU"}
     for action in plan.actions:
         deps = f"  (after {', '.join(action.depends_on)})" if action.depends_on else ""
-        flag = "" if action.is_atomic else "  ⚠ not atomic"
+        flag = "" if action.is_well_formed else "  ⚠ shape"
         print(f"[{BADGE[action.owner]:6}] {action.id}  {action.title}{deps}{flag}")
         print(f"          {action.priority} · {action.estimated_scope}")
-        artifact = action.artifact
-        if artifact.name:
-            fmt = f" ({artifact.format})" if artifact.format else ""
-            print(f"          → {artifact.name}{fmt}")
-        elif action.deliverables:
-            print(f"          → {'; '.join(action.deliverables)}")
+        product = action.product
+        if product.name:
+            fmt = f" ({product.format})" if product.format else ""
+            print(f"          → {product.name}{fmt}")
+        for step in action.steps:                    # the collapsed detail view
+            print(f"            {step_tag.get(step.owner, 'AI'):5} {step.step}")
         if opp := action.terac_opportunity:
             print(f"          TERAC: {opp.opportunity_title}")
-            print(f"                 {opp.expert_role} · {', '.join(opp.language_requirements)}")
+            print(f"                 {opp.expert_count} × {opp.expert_role} "
+                  f"· {opp.timeline_hours}h · {', '.join(opp.language_requirements)}")
         print()
 
-    atomic = len(plan.actions) - len(plan.non_atomic_actions)
-    print(f"Atomicity : {atomic}/{len(plan.actions)} actions produce exactly one named artifact")
-    print(f"Artifacts : {len(plan.artifacts)} products\n")
+    print(f"Shape     : {len(plan.actions)} actions, "
+          f"{len(plan.malformed_actions)} malformed")
+    print(f"Products  : {len(plan.products)}\n")
 
     if plan.warnings:
         print("Warnings:")

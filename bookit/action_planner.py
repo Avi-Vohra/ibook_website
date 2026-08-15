@@ -47,35 +47,24 @@ SERVICE_VOCABULARY = {
 # unrepresentative on their own.
 EXCERPT_WORDS = 4000
 
-# Artifact "names" that name nothing — a category standing in for a file.
-VAGUE_ARTIFACT_NAMES = frozenset({
-    "files", "assets", "documents", "deliverables", "output", "outputs", "artifact",
-    "artifacts", "report", "the book", "the edition", "manuscript", "metadata", "package",
+# Product "names" that name nothing — a category standing in for a deliverable.
+VAGUE_PRODUCT_NAMES = frozenset({
+    "files", "assets", "documents", "deliverables", "output", "outputs",
+    "artifact", "artifacts", "package", "various", "stuff",
 })
 
-# A title joining two things is the reliable tell for a non-atomic action:
-# "Format ebook *and* paperback" is two files pretending to be one step.
-_BUNDLE_PATTERN = re.compile(
-    r"\b(?:and|plus|then|as well as)\b|[&+/]|,\s*(?=\w+\s+(?:and|the|a)\b)",
-    re.IGNORECASE,
-)
+STEP_OWNERS = ("ai", "expert", "author")
 
-# Parenthetical format lists — "(EPUB + print PDF)", "(ebook and paperback)" —
-# hide bundling from a naive title scan.
-_FORMAT_LIST = re.compile(r"\(([^)]*(?:\band\b|[&+,/])[^)]*)\)", re.IGNORECASE)
+# The author-facing plan should stay readable. Outside this range the model has
+# either merged everything into one action or written an engineering backlog.
+MIN_ACTIONS, MAX_ACTIONS = 3, 7
+MIN_STEPS, MAX_STEPS = 2, 6
 
-
-def bundled_title(title: str) -> str | None:
-    """Return the joining phrase if this title names more than one thing.
-
-    Deliberately conservative: it only fires on explicit joiners, so a title
-    like "Report manuscript structural issues" passes untouched.
-    """
-    if inner := _FORMAT_LIST.search(title):
-        return inner.group(1).strip()
-    if match := _BUNDLE_PATTERN.search(title):
-        return match.group(0).strip()
-    return None
+# Terac's quote endpoint rejects anything outside these, so the planner is held
+# to the same bounds rather than promising the author a turnaround Terac cannot
+# accept.
+MIN_TIMELINE_HOURS, MAX_TIMELINE_HOURS = 72, 720
+MIN_EXPERTS, MAX_EXPERTS = 1, 999
 
 
 SYSTEM_PROMPT = """\
@@ -183,45 +172,52 @@ manuscript and a short list of substantive translation issues."
 
 # Action Granularity
 
-Every action is atomic: it produces exactly **one** artifact. An artifact is something that did \
-not exist before the action ran and that can be opened, read, or shipped on its own — a file, an \
-asset, a document, a decision record.
+Actions are what the **author** reads and approves. Pitch them at the level of outcomes an author \
+would recognise and pay for — never at the level of engineering steps.
 
-Rules:
+One action produces one product: a thing the author receives. "Translate the book into German" is \
+one action, and its product is the finished, human-reviewed German manuscript. Building a \
+glossary, translating a sample chapter first, running source-vs-translation QA, and having a \
+native speaker revise the draft are **not** separate actions. They are how that one action is \
+carried out.
 
-- One action, one artifact. If finishing an action would produce two files, it is two actions.
-- The title is an imperative verb followed by the artifact it produces. A title containing "and", \
-"&", "+", "/", or a comma joining two verbs is always a signal to split the action.
-- Split by format, by language, and by edition. An EPUB and a print-ready PDF are two artifacts, \
-so they are two actions. An English blurb and a German blurb are two artifacts.
-- `deliverables` contains exactly one entry, and it describes that same artifact.
-- `artifact.name` is a concrete filename or asset name — `glossary-en-de.csv`, \
-`the-salt-road-de.epub` — never a category like "files", "assets", or "the German edition".
-- If you cannot name the artifact, the action is still too large. Break it down until every piece \
-has a name.
-- An `AUTHOR_DECISION` action still produces an artifact: a decision record holding the questions \
-asked and the answers given.
-- Smallest complete set does not mean fewest actions. Never merge two artifacts into one action \
-to shorten the plan.
+A separate orchestration agent works out, at execution time, how to sequence the internal work, \
+what it can do itself, and what it hands to a human. Do not pre-empt those decisions. In \
+particular, never surface staging or risk-management tactics — "translate one sample chapter \
+first", "review the worst three passages" — as author-facing actions. They are implementation \
+detail and they make the plan read like a backlog.
 
-Bad — each bundles more than one artifact:
+Produce **3 to 7 actions**. A plan with twenty actions is an engineering backlog, not something an \
+author can read and approve.
 
-- "Translate, edit, format, publish, and market the German edition."
-- "Format English ebook (EPUB) and paperback (print PDF)" — two files.
-- "Generate German metadata and book description" — two files.
-- "Publish English edition to KDP" — bundles upload, QA, and the live listing; name the artifact.
-- "Parse manuscript and run structural QA" — the clean text and the QA report are two artifacts.
+Each action carries a `steps` preview: 2 to 6 short plain-language lines saying roughly what \
+happens inside it, each under about 90 characters. This is what the author sees when they expand \
+the action, so keep it readable and non-technical. It is a summary, not an execution plan — the \
+orchestrator decides the real sequence. Give every step an `owner` of "ai", "expert", or "author" \
+so the author can see exactly where real people are involved.
 
-Good — one named artifact each:
+`product.name` is what the author gets, in their words — "German edition of the manuscript", \
+"Final cover", "Launch plan" — not a filename and not a category like "files" or "assets".
 
-- "Extract clean manuscript text" → `manuscript-clean.md`
-- "Report manuscript structural issues" → `structure-qa.md`
-- "Build EN-DE terminology glossary" → `glossary-en-de.csv`
-- "Translate manuscript into German" → `the-salt-road-de.docx`
-- "Produce German reflowable EPUB" → `the-salt-road-de.epub`
-- "Produce German print interior PDF" → `the-salt-road-de-interior.pdf`
-- "Write German book description" → `description-de.html`
-- "Assemble German KDP keyword set" → `keywords-de.csv`
+Bad — these are steps, not actions:
+
+- "Build a German translation glossary"
+- "Translate a sample chapter into German"
+- "Native German speaker reviews the sample"
+- "Apply the editor's corrections"
+- "Reformat the German edition"
+
+Good — all five of those belong inside one action:
+
+- **Title:** "Translate the book into German"
+- **Product:** the finished, natively reviewed German manuscript
+- **Steps:** "Lock character names and invented terms into a glossary" (ai) · "Translate the full \
+manuscript" (ai) · "A native German editor revises the draft" (expert) · "Check the result \
+against the English source" (ai)
+
+Still bad, because it bundles two products the author would price separately: "Translate and \
+publish the German edition." Split that into "Translate the book into German" and "Publish the \
+German edition on Amazon KDP".
 
 # Dependencies
 
@@ -271,12 +267,14 @@ response must be a single JSON object matching this schema:
       "priority": "critical | recommended | optional",
       "depends_on": [],
       "inputs": [],
-      "artifact": {
-        "name": "concrete filename or asset name, e.g. glossary-en-de.csv",
-        "format": "e.g. CSV, EPUB 3, print-ready PDF, HTML, decision record",
-        "description": "what this one artifact contains"
+      "product": {
+        "name": "what the author gets, in their words, e.g. German edition of the manuscript",
+        "format": "e.g. manuscript, EPUB + print PDF, cover artwork, launch plan",
+        "description": "one sentence on what this product is"
       },
-      "deliverables": ["exactly one entry, describing the artifact above"],
+      "steps": [
+        {"step": "short plain-language line, under 90 characters", "owner": "ai | expert | author"}
+      ],
       "acceptance_criteria": [],
       "estimated_scope": "",
       "terac_opportunity": null
@@ -290,6 +288,10 @@ For actions requiring Terac, replace `"terac_opportunity": null` with:
   "expert_role": "",
   "opportunity_title": "",
   "opportunity_description": "",
+  "panel_description": "who these people must be, in one or two sentences — this is what Terac
+                        recruits against, so state language, expertise and any hard requirement",
+  "expert_count": 1,
+  "timeline_hours": 72,
   "required_skills": [],
   "language_requirements": [],
   "inputs_provided": [],
@@ -299,6 +301,14 @@ For actions requiring Terac, replace `"terac_opportunity": null` with:
   "priority": ""
 }
 
+`expert_count` is how many people are needed, between 1 and 999. Judgement tasks that are really \
+opinion polls — which cover, which blurb, which title — need a panel: 30 to 60. Craft tasks done \
+once by one qualified professional — a literary edit, a cover refinement, a legal review — need \
+1 to 3. Choose deliberately; this number multiplies the cost.
+
+`timeline_hours` is how long the experts have, between 72 and 720. Terac does not accept anything \
+shorter than 72 hours, so never promise the author a faster human turnaround than that.
+
 # Final Validation
 
 Before returning the plan, verify that: every action corresponds to the author's actual goals; \
@@ -307,10 +317,10 @@ appropriate; Terac opportunities contain enough context for an expert to underst
 the assignment without needing the entire planning conversation; and the complete sequence, if \
 executed successfully, would produce the author's requested publishing outcome.
 
-Then re-read every action title one more time and confirm each one names a single artifact. If a \
-title contains "and", "&", "+", "/", or two verbs, split that action before returning. Confirm \
-every action has an `artifact.name` that reads like a filename, and exactly one entry in \
-`deliverables`.
+Then re-read the plan as the author would. Confirm there are between 3 and 7 actions, that each \
+one names a single product that author would recognise, and that no action is really an \
+implementation step that belongs inside another one. Confirm every action has 2 to 6 short steps \
+with an owner on each.
 
 Action ids must be unique and of the form A1, A2, A3… `depends_on` must reference only ids that \
 exist in this plan."""
@@ -461,6 +471,9 @@ class TeracOpportunity:
     expert_role: str = ""
     opportunity_title: str = ""
     opportunity_description: str = ""
+    panel_description: str = ""
+    expert_count: int = 1
+    timeline_hours: int = MIN_TIMELINE_HOURS
     required_skills: list[str] = field(default_factory=list)
     language_requirements: list[str] = field(default_factory=list)
     inputs_provided: list[str] = field(default_factory=list)
@@ -469,12 +482,40 @@ class TeracOpportunity:
     estimated_scope: str = ""
     priority: str = ""
 
+    def panel_brief(self) -> str:
+        """Who Terac should recruit. Falls back to the role when unstated."""
+        if self.panel_description:
+            return self.panel_description
+        parts = [self.expert_role or "Qualified expert"]
+        if self.language_requirements:
+            parts.append("Languages: " + ", ".join(self.language_requirements))
+        if self.required_skills:
+            parts.append("Skills: " + ", ".join(self.required_skills))
+        return ". ".join(parts)
+
+    def task_brief(self) -> str:
+        """What the expert is being asked to do, complete enough to accept it."""
+        parts = [self.opportunity_description or self.opportunity_title]
+        if self.inputs_provided:
+            parts.append("You will receive: " + ", ".join(self.inputs_provided) + ".")
+        if self.expected_deliverables:
+            parts.append("Deliver: " + ", ".join(self.expected_deliverables) + ".")
+        if self.acceptance_criteria:
+            parts.append("Accepted when: " + "; ".join(self.acceptance_criteria) + ".")
+        return " ".join(p for p in parts if p)
+
     @classmethod
     def from_json(cls, raw: dict[str, Any]) -> TeracOpportunity:
         return cls(
             expert_role=_text(raw.get("expert_role")),
             opportunity_title=_text(raw.get("opportunity_title")),
             opportunity_description=_text(raw.get("opportunity_description")),
+            panel_description=_text(raw.get("panel_description")),
+            expert_count=_clamped_int(
+                raw.get("expert_count"), MIN_EXPERTS, MAX_EXPERTS, default=1),
+            timeline_hours=_clamped_int(
+                raw.get("timeline_hours"), MIN_TIMELINE_HOURS, MAX_TIMELINE_HOURS,
+                default=MIN_TIMELINE_HOURS),
             required_skills=_str_list(raw.get("required_skills")),
             language_requirements=_str_list(raw.get("language_requirements")),
             inputs_provided=_str_list(raw.get("inputs_provided")),
@@ -486,12 +527,8 @@ class TeracOpportunity:
 
 
 @dataclass
-class Artifact:
-    """The one thing an action produces.
-
-    Downstream production agents key off ``name``, so it has to read like a
-    filename rather than a category.
-    """
+class Product:
+    """The one thing an action delivers to the author."""
 
     name: str = ""
     format: str = ""
@@ -499,13 +536,13 @@ class Artifact:
 
     @property
     def is_named(self) -> bool:
-        """Is this a specific artifact, or a category wearing a name?"""
+        """Is this a real product, or a category wearing a name?"""
         if not self.name:
             return False
-        return self.name.strip().lower() not in VAGUE_ARTIFACT_NAMES
+        return self.name.strip().lower() not in VAGUE_PRODUCT_NAMES
 
     @classmethod
-    def from_json(cls, raw: Any) -> Artifact:
+    def from_json(cls, raw: Any) -> Product:
         if isinstance(raw, str):  # models sometimes collapse it to a bare name
             return cls(name=raw.strip())
         if not isinstance(raw, dict):
@@ -514,6 +551,26 @@ class Artifact:
             name=_text(raw.get("name")),
             format=_text(raw.get("format")),
             description=_text(raw.get("description")),
+        )
+
+
+@dataclass
+class Step:
+    """One line of the collapsed detail view under an action."""
+
+    step: str = ""
+    owner: str = "ai"  # ai | expert | author
+
+    @classmethod
+    def from_json(cls, raw: Any) -> Step:
+        if isinstance(raw, str):
+            return cls(step=raw.strip())
+        if not isinstance(raw, dict):
+            return cls()
+        owner = _text(raw.get("owner")).lower()
+        return cls(
+            step=_text(raw.get("step")) or _text(raw.get("text")),
+            owner=owner if owner in STEP_OWNERS else "ai",
         )
 
 
@@ -529,25 +586,21 @@ class Action:
     priority: str = "recommended"
     depends_on: list[str] = field(default_factory=list)
     inputs: list[str] = field(default_factory=list)
-    artifact: Artifact = field(default_factory=Artifact)
-    deliverables: list[str] = field(default_factory=list)
+    product: Product = field(default_factory=Product)
+    steps: list[Step] = field(default_factory=list)
     acceptance_criteria: list[str] = field(default_factory=list)
     estimated_scope: str = ""
     terac_opportunity: TeracOpportunity | None = None
 
     @property
-    def is_atomic(self) -> bool:
-        """One artifact, one deliverable, and a title that names a single thing.
+    def is_well_formed(self) -> bool:
+        """Names one product and previews it in a readable number of steps."""
+        return self.product.is_named and MIN_STEPS <= len(self.steps) <= MAX_STEPS
 
-        An AUTHOR_DECISION is exempt from the title check: several questions
-        answered on one decision record is still one artifact, and splitting
-        them would mean four separate interruptions of the author.
-        """
-        return (
-            self.artifact.is_named
-            and len(self.deliverables) <= 1
-            and (self.needs_author or not bundled_title(self.title))
-        )
+    @property
+    def expert_steps(self) -> list[Step]:
+        """The steps a real person does — what the Terac badge is about."""
+        return [s for s in self.steps if s.owner == "expert"]
 
     @property
     def is_human(self) -> bool:
@@ -579,8 +632,8 @@ class Action:
             priority=priority if priority in PRIORITIES else "recommended",
             depends_on=_str_list(raw.get("depends_on")),
             inputs=_str_list(raw.get("inputs")),
-            artifact=Artifact.from_json(raw.get("artifact")),
-            deliverables=_str_list(raw.get("deliverables")),
+            product=Product.from_json(raw.get("product") or raw.get("artifact")),
+            steps=[Step.from_json(s) for s in (raw.get("steps") or []) if s],
             acceptance_criteria=_str_list(raw.get("acceptance_criteria")),
             estimated_scope=_text(raw.get("estimated_scope")),
             terac_opportunity=(
@@ -640,14 +693,33 @@ class ActionPlan:
         return [a.terac_opportunity for a in self.actions if a.terac_opportunity]
 
     @property
-    def artifacts(self) -> list[Artifact]:
-        """Everything this plan produces, in execution order."""
-        return [a.artifact for a in self.actions if a.artifact.name]
+    def products(self) -> list[Product]:
+        """Everything the author receives, in delivery order."""
+        return [a.product for a in self.actions if a.product.name]
+
+    def subset(self, keep: set[str] | list[str]) -> ActionPlan:
+        """The plan with only these actions, for when the author unticks some.
+
+        Dependencies on dropped actions are removed rather than left dangling —
+        otherwise the orchestrator would wait forever on something that is
+        never going to run.
+        """
+        kept = [a for a in self.actions if a.id in set(keep)]
+        ids = {a.id for a in kept}
+        for action in kept:
+            action.depends_on = [d for d in action.depends_on if d in ids]
+        return ActionPlan(
+            book_summary=self.book_summary,
+            plan_summary=self.plan_summary,
+            actions=kept,
+            route=self.route,
+            warnings=list(self.warnings),
+        )
 
     @property
-    def non_atomic_actions(self) -> list[Action]:
-        """Actions still bundling more than one product. Empty is the goal."""
-        return [a for a in self.actions if not a.is_atomic]
+    def malformed_actions(self) -> list[Action]:
+        """Actions without a clear product or a readable step list."""
+        return [a for a in self.actions if not a.is_well_formed]
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -662,6 +734,15 @@ class ActionPlan:
 # ── parsing helpers ───────────────────────────────────────────────────
 def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _clamped_int(value: Any, low: int, high: int, *, default: int) -> int:
+    """Coerce to int and clamp. Terac rejects out-of-range values outright."""
+    try:
+        number = int(float(value))  # models write "40" and 40.0 interchangeably
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
 
 
 def _str_list(value: Any) -> list[str]:
@@ -737,27 +818,52 @@ def parse_plan(payload: dict[str, Any], route: Route | None = None) -> ActionPla
                 "it cannot be posted as-is."
             )
 
-        # Atomicity: one action must yield exactly one nameable artifact.
-        # AUTHOR_DECISION titles may legitimately join several questions that
-        # land on a single decision record.
-        if not action.needs_author and (joiner := bundled_title(action.title)):
+        # Shape: one recognisable product, previewed in a readable step list.
+        if not action.product.name:
+            warnings.append(f"{action.id}: no product named.")
+        elif not action.product.is_named:
             warnings.append(
-                f"{action.id}: title bundles more than one artifact "
-                f"(“{joiner}”) — should be split: {action.title!r}"
+                f"{action.id}: product {action.product.name!r} is a category, not a deliverable."
             )
-        if len(action.deliverables) > 1:
+        if not action.steps:
+            warnings.append(f"{action.id}: no steps — the author has nothing to expand.")
+        elif len(action.steps) > MAX_STEPS:
             warnings.append(
-                f"{action.id}: {len(action.deliverables)} deliverables in one action "
-                f"({'; '.join(action.deliverables)}) — should be split."
+                f"{action.id}: {len(action.steps)} steps is too detailed for the author view "
+                f"(max {MAX_STEPS}); the orchestrator works out the rest."
             )
-        elif not action.deliverables:
-            warnings.append(f"{action.id}: no deliverable stated.")
-        if not action.artifact.name:
-            warnings.append(f"{action.id}: no artifact named.")
-        elif not action.artifact.is_named:
-            warnings.append(
-                f"{action.id}: artifact {action.artifact.name!r} is a category, not a file."
-            )
+        elif len(action.steps) < MIN_STEPS:
+            warnings.append(f"{action.id}: only {len(action.steps)} step(s).")
+
+        # A human action Terac cannot be asked to price is not actionable.
+        if opportunity := action.terac_opportunity:
+            if not opportunity.panel_description:
+                warnings.append(
+                    f"{action.id}: Terac opportunity has no panel description — "
+                    "recruiting falls back to the expert role."
+                )
+            if opportunity.expert_count > 1 and action.execution_type == "AI_WITH_EXPERT_REVIEW":
+                warnings.append(
+                    f"{action.id}: {opportunity.expert_count} experts for a review step — "
+                    "review is usually one qualified person, and this multiplies cost."
+                )
+
+    # Bookit's premise is that taste calls go to real people. A plan where an
+    # agent quietly does the translation review, the cover and the blurb by
+    # itself is not a cheaper plan — it is the product's central claim removed.
+    if not any(a.execution_type in NEEDS_OPPORTUNITY for a in actions):
+        warnings.append(
+            "No action involves a human. Every judgement call is being left to the model, "
+            "which is the one thing Bookit says it does not do."
+        )
+
+    if len(actions) > MAX_ACTIONS:
+        warnings.append(
+            f"{len(actions)} actions is an engineering backlog, not an author-facing plan "
+            f"(target {MIN_ACTIONS}-{MAX_ACTIONS}); steps belong inside actions."
+        )
+    elif len(actions) < MIN_ACTIONS:
+        warnings.append(f"Only {len(actions)} action(s) — the plan is probably under-specified.")
 
     summary = payload.get("book_summary")
     return ActionPlan(
