@@ -6,3 +6,5 @@ venv/
 .DS_Store
 .pytest_cache/
 .bookit_runs/
+.env
+stripe_store.db

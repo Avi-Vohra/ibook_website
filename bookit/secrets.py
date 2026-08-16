@@ -15,8 +15,12 @@ the current working directory, neither of which holds for `python scripts/…`.
 from __future__ import annotations
 
 import os
-import tomllib
 from pathlib import Path
+
+try:                      # 3.11+
+    import tomllib
+except ModuleNotFoundError:   # 3.10 and older
+    import tomli as tomllib
 
 SECRETS_PATH = Path(__file__).resolve().parents[1] / ".streamlit" / "secrets.toml"
 

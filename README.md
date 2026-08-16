@@ -25,6 +25,7 @@ live quotes; even then nothing launches until you press Approve.
 ## Run it
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate   # skip if .venv already exists
 pip install -r requirements.txt
 
 # the app
@@ -50,6 +51,28 @@ panel results.
 Keys live in `.streamlit/secrets.toml` (`TERAC_API_KEY`) and the environment
 (`PIONEER_API_KEY`). Both are gitignored.
 
+### Stripe (invoice step)
+
+The invoice step creates a real Stripe Checkout Session sized to the live order
+total. Keys are read via `st.secrets`, Streamlit's native secrets mechanism —
+the same file format Streamlit Community Cloud expects at deploy time:
+
+```bash
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+# fill in STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY from
+# https://dashboard.stripe.com/apikeys — this file is gitignored
+```
+
+On Streamlit Community Cloud, skip the file and paste the same two lines into
+**App settings → Secrets** instead.
+
+Pay with test card `4242 4242 4242 4242`, any future expiry, any CVC — the
+invoice page confirms payment by polling the Stripe API directly, no webhook
+receiver required.
+
+A minimal, standalone Checkout demo (`streamlit_app.py`, a fixed $20 product) is
+included too, for sanity-checking the Stripe wiring in isolation.
+
 ## Layout
 
 | File | What's in it |
@@ -64,14 +87,18 @@ Keys live in `.streamlit/secrets.toml` (`TERAC_API_KEY`) and the environment
 | `bookit/planner.py` | The old regex intent reader; still used for the sample-author readout |
 | `bookit/covers.py` | The four cover directions, generated as SVG from the title |
 | `bookit/content.py` | All copy, the sample author, and the `TERAC` results block |
-| `bookit/theme.py` | The cream-and-amber palette and the HTML fragments that use it |
+| `bookit/theme.py` | The letterpress palette and the HTML fragments that use it |
+| `store.py` | Shared SQLite persistence for Stripe IDs (imported, not run directly) |
+| `streamlit_app.py` | Minimal standalone Checkout demo (fixed $20 product) |
+| `stripe_store.db` | SQLite database, created automatically on first run |
+| `.streamlit/secrets.toml` | Stripe/Terac/Pioneer keys, gitignored — copy from `secrets.toml.example` |
 | **Scripts and tests** | |
 | `scripts/run_pipeline.py` | Plan → execute → report, end to end |
 | `scripts/plan_demo.py` | Generate one plan and print it |
 | `tests/test_action_planner.py` | Payload building, plan shape, JSON recovery (offline) |
 | `tests/test_orchestrator.py` | State machine, spend gate, durability (offline) |
 | `tests/test_app.py` | Smoke tests: every page renders, the wizard runs |
-| `index.html` | The original page, kept for reference |
+| `index_1.html` | The original page, kept for reference |
 
 ## The execution agent
 

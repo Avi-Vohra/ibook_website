@@ -26,7 +26,9 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc
 from pathlib import Path
 from typing import Any, Callable
 

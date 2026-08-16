@@ -1,3 +1,5 @@
 streamlit>=1.32
 openai>=1.40
 requests>=2.31
+stripe
+tomli>=2.0; python_version < "3.11"

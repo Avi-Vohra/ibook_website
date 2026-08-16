@@ -6,6 +6,35 @@ Everything a non-engineer might need to edit lives in this file.
 from __future__ import annotations
 
 # ══════════════════════════════════════════════════════════════════════
+# PAYMENT — display currency symbol only. The actual Checkout Session is
+#   created dynamically in app.py from STRIPE_SECRET_KEY (see
+#   .streamlit/secrets.toml); there's nothing to paste here.
+# ══════════════════════════════════════════════════════════════════════
+PAY = {"currency": "$"}
+
+# ══════════════════════════════════════════════════════════════════════
+# PRICES — change these numbers and the whole app follows.
+# ══════════════════════════════════════════════════════════════════════
+PRICE = {"publish": 75, "per_language": 100, "per_cover": 10, "market": 50}
+
+PRICING_CARDS = [
+    ("Publishing & cover design", PRICE["publish"], "one-time, per book", [
+        "Print-ready interior PDF", "Store-validated EPUB",
+        "Store metadata & keywords", "Front and back matter",
+        "Cover testing with real readers"]),
+    ("Translation", PRICE["per_language"], "per language", [
+        "Named-entity glossary", "Glossary-locked translation",
+        "Native-speaker review", "Localised title & blurb"]),
+    ("Cover directions", PRICE["per_cover"], "per cover design", [
+        "Genuinely different directions, not variations",
+        "Generated from your genre and title",
+        "Real readers pick the winner", "Most authors order four"]),
+    ("Marketing", PRICE["market"], "one-time, per book", [
+        "Blurb and title testing", "Keyword & category research",
+        "Launch sequence and calendar", "Price-point survey"]),
+]
+
+# ══════════════════════════════════════════════════════════════════════
 # TERAC RESULTS — paste the real numbers here, then set live = True.
 # Everything on the "Human results" page reads from this dict.
 # ══════════════════════════════════════════════════════════════════════
@@ -43,8 +72,8 @@ SAMPLE_CTX = (
     "I've written a 62,000-word fantasy novel called The Salt Road, aimed at young adult "
     "readers who liked Piranesi and Uprooted. It's my first book and I have no contacts in "
     "publishing. About half of my early readers are German so I'd really like a German "
-    "edition. I want to sell it on Amazon as an ebook and paperback. My budget is around "
-    "$200 and I'd like to launch within a month."
+    "edition. I want to sell it on Amazon as an ebook and paperback. I'd like to launch "
+    "within a month."
 )
 
 SAMPLE_FILE = {
@@ -58,18 +87,21 @@ SERVICES = [
         "key": "publish",
         "icon": "📕",
         "name": "Publishing & Cover",
-        "blurb": "Typesetting, print-ready interior, EPUB, cover design, store metadata",
+        "cost": f"${PRICE['publish']}",
+        "blurb": "Typesetting, print-ready interior, EPUB, store metadata, cover testing",
     },
     {
         "key": "translate",
         "icon": "🌍",
         "name": "Translation",
+        "cost": f"${PRICE['per_language']} per language",
         "blurb": "Glossary-consistent translation with native-speaker review",
     },
     {
         "key": "market",
         "icon": "📣",
         "name": "Marketing",
+        "cost": f"${PRICE['market']}",
         "blurb": "Blurb and title testing, keywords, launch sequence, pricing",
     },
 ]
@@ -80,7 +112,7 @@ THINK = [
     "Extracting named entities and recurring terminology",
     "Matching against genre conventions and store requirements",
     "Deciding which steps need a human eye",
-    "Pricing and sequencing the plan",
+    "Sequencing the plan",
 ]
 
 GLOSSARY = {
@@ -107,16 +139,18 @@ SAMPLE_BLURB = (
 # ── page copy ─────────────────────────────────────────────────────────
 
 JUDGES_REAL = [
-    "The planning agent genuinely reads your context and generates a different plan for "
-    "different books — try it with two different inputs.",
-    "The four cover directions are generated from your title and genre.",
+    "The planning agent reads your context and generates a different plan for different "
+    "books — try two different inputs.",
+    "Pricing, budget checking and the invoice are fully live and add up.",
+    "Cover directions are generated from your title and genre.",
     "The human verdict in **Human results** is **real data from real people** recruited "
-    "through Terac today.",
+    "through Terac.",
 ]
 
 JUDGES_STAGED = [
     "The pipeline runs locally, so timings are compressed — a real run takes hours, not seconds.",
-    "Translation shows one sample chapter, not a full book.",
+    "Translation shows one sample chapter, not a whole book.",
+    "Checkout is a real Stripe payment link; we don't process cards ourselves.",
     "We'd rather tell you this than have you find it.",
 ]
 
@@ -138,9 +172,9 @@ HOW_STEPS = [
      "what you want, what you can spend, what language you want it in. The more specific you "
      "are, the more specific the plan."),
     ("An agent writes your publishing plan",
-     "Not a checklist. A plan built for <em>your</em> book, as a set of action items — each one "
-     "priced, timed, and labelled with who does it: Agent or Human via Terac. You pick what "
-     "you want. Nothing runs without your approval."),
+     "Not a checklist. A plan built for <em>your</em> book, as a set of action items — each "
+     "labelled with who does it: Agent or Human via Terac. You pick what you want. Nothing "
+     "runs without your approval."),
     ("Agents do the mechanical work",
      "Text extraction, a named-entity glossary so translations stay consistent, print-ready "
      "typesetting, a reflowable EPUB, store metadata and keywords, cover directions, launch "
@@ -158,17 +192,17 @@ STACK = [
      "results and acts on them. This is the only part of the system that has taste."),
     ("Planning agent",
      "Reads the manuscript and the author's own words, extracts intent (language, platform, "
-     "genre, audience, budget), and emits a priced, sequenced action plan with each item "
-     "routed to either an agent or a human."),
+     "genre, audience, budget), and emits a sequenced action plan with each item routed to "
+     "either an agent or a human."),
     ("Production agents",
      "Text extraction, named-entity glossary, typesetting, EPUB generation, cover synthesis, "
      "metadata and keyword research, launch copy."),
     ("Stripe",
-     "The agent invoices the author directly with a payment link. No human on Bookit's side "
+     "The agent prices the work and issues a payment link itself. No human on Bookit's side "
      "sends an invoice."),
     ("Replay",
-     "Automated QA. Explores the app, finds bugs, reports root causes — our test suite, "
-     "written by nobody."),
+     "Automated QA. Explores the app, finds bugs and accessibility failures, reports root "
+     "causes — our test suite, written by nobody."),
 ]
 
 TERAC_QUESTIONS = [

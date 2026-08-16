@@ -16,7 +16,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 from bookit import content, planner  # noqa: E402
 
 APP = str(ROOT / "app.py")
-PAGES = ["Home", "How it works", "Try it", "Human results", "The stack"]
+PAGES = ["Home", "How it works", "Pricing", "Try it", "Human results", "The stack"]
 
 
 def test_every_page_renders() -> None:
@@ -32,23 +32,36 @@ def test_planner_reads_the_sample_author() -> None:
     assert r.genre == "fantasy"
     assert r.langs == ["German"]
     assert r.platform == "Amazon KDP"
-    assert r.budget == 200
+    assert r.budget is None
     assert r.title == "The Salt Road"
     assert r.debut and r.deadline
 
     plan = planner.make_plan(r, {"publish", "translate", "market"})
-    assert len(plan) == 9
-    assert sum(i.cost for i in plan) == 145
-    assert sum(1 for i in plan if i.is_human) == 3
+    assert len(plan) == planner.CAP
+    assert sum(1 for i in plan if i.is_human) == 4
     assert [i.phase for i in plan] == sorted(i.phase for i in plan)
 
 
-def test_plan_respects_a_smaller_budget() -> None:
-    r = planner.read_context(content.SAMPLE_CTX)
-    r.budget = 100
-    plan = planner.make_plan(r, {"publish", "translate", "market"})
-    assert sum(i.cost for i in plan) <= 100
-    assert any(i.is_human for i in plan), "the human step is the point of Bookit"
+def test_pricing_adds_up() -> None:
+    services = {"publish", "translate", "market"}
+    lines, total = planner.price_order(services, covers=4, langs=1, lang_names=["German"])
+    assert total == 75 + 40 + 100 + 50
+    assert sum(x["v"] for x in lines) == total
+    assert any("German" in x["d"] for x in lines)
+
+
+def test_trim_fits_the_budget_and_says_what_it_dropped() -> None:
+    services = {"publish", "translate", "market"}
+    trimmed, cov, lng, dropped = planner.trim_order(120, services, covers=4, langs=2)
+    _, total = planner.price_order(trimmed, cov, lng)
+    assert total <= 120
+    assert "publish" in trimmed, "publishing is the last thing to go"
+    assert "Marketing" in dropped and "Translation" in dropped
+
+    # an impossible budget trims as far as it goes, but never drops publishing
+    trimmed, cov, lng, _ = planner.trim_order(20, {"publish"}, covers=4, langs=1)
+    assert trimmed == {"publish"} and cov == 1
+    assert planner.price_order(trimmed, cov, lng)[1] > 20
 
 
 # A canned plan, injected via the `_offline_plan` seam so the wizard tests never
@@ -94,7 +107,7 @@ def _wizard_at_plan(**services: bool) -> "AppTest":
     assert not at.exception
     build = [b for b in at.button if "publishing plan" in b.label][0]
     assert not build.disabled, "sample manuscript + services should unlock the build"
-    build.click().run()
+    build.click().run()  # thinking animation, then the plan
     assert not at.exception, at.exception
     return at
 
@@ -147,6 +160,14 @@ def test_answering_the_author_question_advances_the_run() -> None:
 
     body = " ".join(str(m.value) for m in at.markdown)
     assert "needs your approval" in body.lower()
+
+    invoice = [b for b in at.button if "invoice" in b.label][0]
+    invoice.click().run()
+    assert not at.exception
+    assert at.session_state["step"] == "invoice"
+    body = " ".join(str(m.value) for m in at.markdown)
+    assert "$215" in body                      # 75 + 4×10 + 100 (publish + translate)
+    assert "Stripe is not configured" in body or "Opens Stripe's hosted checkout" in body
 
 
 def test_deselecting_every_item_blocks_the_run() -> None:
